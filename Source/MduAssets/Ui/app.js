@@ -1,0 +1,472 @@
+// MDU Asset Server web interface. Plain JavaScript on the JSON API, no build step (ADR-0007).
+
+// Absolute URLs from the origin: a page opened as https://user:password@host/ would otherwise make every
+// relative request carry the credentials, which fetch() refuses.
+const api = `${location.origin}/api/v1`;
+const params = new URLSearchParams(location.search);
+const state = {
+    project: params.get("project") || "default",
+    projects: [],
+    assets: [],
+    view: readSetting("mdu-assets-view", "grid"),
+    sort: { key: "createdAt", direction: "descending" },
+    format: readSetting("mdu-assets-snippet-format", "markdown"),
+    cards: new Map(),
+};
+
+const $ = (id) => document.getElementById(id);
+const status = $("status");
+
+function readSetting(key, fallback) {
+    try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+
+function writeSetting(key, value) {
+    try { localStorage.setItem(key, value); } catch { }
+}
+
+function announce(message) {
+    status.textContent = "";
+    requestAnimationFrame(() => { status.textContent = message; });
+}
+
+function element(tag, properties = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(properties)) {
+        if (key === "class") node.className = value;
+        else if (key === "text") node.textContent = value;
+        else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+        else if (value !== undefined && value !== null && value !== false) node.setAttribute(key, value === true ? "" : value);
+    }
+    node.append(...children);
+    return node;
+}
+
+const numberFormat = new Intl.NumberFormat("en");
+const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
+
+function formatSize(bytes) {
+    if (bytes < 1024) return `${numberFormat.format(bytes)} B`;
+    if (bytes < 1024 * 1024) return `${numberFormat.format(Math.round(bytes / 102.4) / 10)} KB`;
+    return `${numberFormat.format(Math.round(bytes / 104857.6) / 10)} MB`;
+}
+
+const formatDimensions = (asset) => asset.width && asset.height ? `${asset.width} × ${asset.height}` : "–";
+
+async function request(path, options = {}) {
+    const response = await fetch(api + path, { headers: { Accept: "application/json", ...options.headers }, ...options });
+    const body = response.headers.get("Content-Type")?.includes("json") ? await response.json() : null;
+    if (!response.ok) throw new Error(body?.detail || body?.title || `${response.status} ${response.statusText}`);
+    return body;
+}
+
+// Theme switch, cycling auto → light → dark like MDU.
+const themes = ["auto", "light", "dark"];
+const themeNames = { auto: "Auto", light: "Light", dark: "Dark" };
+const themeToggle = $("theme-toggle");
+
+function updateThemeLabel() {
+    const current = document.documentElement.dataset.theme;
+    const next = themes[(themes.indexOf(current) + 1) % themes.length];
+    themeToggle.title = `Theme: ${themeNames[current]} (click for ${themeNames[next]})`;
+    themeToggle.setAttribute("aria-label", `Theme: ${themeNames[current]}. Click to switch to ${themeNames[next]}.`);
+}
+
+themeToggle.addEventListener("click", () => {
+    const root = document.documentElement;
+    const next = themes[(themes.indexOf(root.dataset.theme) + 1) % themes.length];
+    root.dataset.theme = next;
+    writeSetting("mdu-theme", next);
+    updateThemeLabel();
+});
+updateThemeLabel();
+
+// Projects and assets
+async function load() {
+    const [me, projects] = await Promise.all([request("/me"), request("/projects")]);
+    $("user-name").textContent = me.name;
+    state.projects = projects.items;
+    const project = state.projects.find((p) => p.slug === state.project) ?? state.projects[0];
+    state.project = project?.slug ?? state.project;
+    renderProjects();
+    await loadAssets();
+}
+
+async function loadAssets() {
+    const list = await request(`/projects/${encodeURIComponent(state.project)}/assets`);
+    state.assets = list.items;
+    renderAssets();
+}
+
+function currentProject() {
+    return state.projects.find((p) => p.slug === state.project);
+}
+
+function renderProjects() {
+    const project = currentProject();
+    $("project-title").textContent = project?.name ?? state.project;
+    $("drop-target").textContent = project?.name ?? state.project;
+    document.title = `${project?.name ?? state.project} – MDU Assets`;
+    $("project-list").replaceChildren(...state.projects.map((p) =>
+        element("li", {}, [element("a", {
+            class: "project-link",
+            href: `/?project=${encodeURIComponent(p.slug)}`,
+            "aria-label": `${p.name}, ${numberFormat.format(p.assetCount)} ${p.assetCount === 1 ? "image" : "images"}`,
+            "aria-current": p.slug === state.project ? "page" : null,
+        }, [element("span", { text: p.name }), element("span", { class: "project-count", text: numberFormat.format(p.assetCount) })])])));
+}
+
+function sortedAssets() {
+    const { key, direction } = state.sort;
+    const value = (asset) => key === "pixels" ? (asset.width ?? 0) * (asset.height ?? 0)
+        : key === "fileName" ? asset.fileName.toLowerCase() : asset[key];
+    const sorted = [...state.assets].sort((a, b) => value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0);
+    return direction === "descending" ? sorted.reverse() : sorted;
+}
+
+function renderAssets() {
+    const assets = sortedAssets();
+    const total = state.assets.reduce((sum, asset) => sum + asset.size, 0);
+    $("project-summary").textContent = state.assets.length === 0 ? ""
+        : `${numberFormat.format(state.assets.length)} ${state.assets.length === 1 ? "image" : "images"} · ${formatSize(total)}`;
+    $("empty-state").hidden = assets.length > 0;
+
+    const grid = state.view === "grid";
+    $("asset-grid").hidden = !grid;
+    $("asset-table-wrapper").hidden = grid || assets.length === 0;
+    $("view-grid").setAttribute("aria-pressed", String(grid));
+    $("view-list").setAttribute("aria-pressed", String(!grid));
+
+    if (grid) {
+        $("asset-grid").replaceChildren(...assets.map((asset) => element("li", {}, [element("button", {
+            class: "asset-card",
+            type: "button",
+            "aria-label": `${asset.fileName}, ${formatDimensions(asset)}, ${formatSize(asset.size)}. Show snippets.`,
+            onclick: () => showSnippet(asset),
+        }, [
+            element("span", { class: "asset-thumb" }, [element("img", { src: asset.url, alt: "", loading: "lazy", decoding: "async" })]),
+            element("span", { class: "asset-meta" }, [
+                element("span", { class: "asset-name", text: asset.fileName, title: asset.fileName }),
+                element("span", { class: "asset-detail", text: `${formatDimensions(asset)} · ${formatSize(asset.size)}` }),
+            ]),
+        ])])));
+    } else {
+        for (const header of document.querySelectorAll("#asset-table th")) {
+            const key = header.querySelector("button").dataset.sort;
+            header.setAttribute("aria-sort", key === state.sort.key ? state.sort.direction : "none");
+        }
+        $("asset-rows").replaceChildren(...assets.map((asset) => element("tr", {}, [
+            element("td", {}, [element("button", { class: "row-button", type: "button", onclick: () => showSnippet(asset) }, [
+                element("img", { src: asset.url, alt: "", loading: "lazy", decoding: "async" }),
+                element("span", { text: asset.fileName }),
+            ])]),
+            element("td", { text: formatDimensions(asset) }),
+            element("td", { text: formatSize(asset.size) }),
+            element("td", { text: dateFormat.format(new Date(asset.createdAt)) }),
+        ])));
+    }
+}
+
+$("view-grid").addEventListener("click", () => { state.view = "grid"; writeSetting("mdu-assets-view", "grid"); renderAssets(); });
+$("view-list").addEventListener("click", () => { state.view = "list"; writeSetting("mdu-assets-view", "list"); renderAssets(); });
+
+for (const button of document.querySelectorAll("#asset-table th button")) {
+    button.addEventListener("click", () => {
+        const key = button.dataset.sort;
+        state.sort = state.sort.key === key
+            ? { key, direction: state.sort.direction === "ascending" ? "descending" : "ascending" }
+            : { key, direction: key === "fileName" ? "ascending" : "descending" };
+        renderAssets();
+        document.querySelector(`#asset-table th button[data-sort="${key}"]`).focus();
+    });
+}
+
+// Snippets
+const formats = {
+    markdown: { label: "Markdown", text: (asset) => asset.markdown },
+    url: { label: "URL", text: (asset) => asset.url },
+    html: { label: "HTML", text: (asset) => asset.html },
+};
+
+function snippetText(asset) {
+    return (formats[state.format] ?? formats.markdown).text(asset);
+}
+
+async function copyText(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function flashCopied(button, ok) {
+    button.classList.toggle("is-copied", ok);
+    button.classList.toggle("is-failed", !ok);
+    button.lastChild.textContent = ok ? "Copied" : "Copy failed";
+    clearTimeout(button.resetTimer);
+    button.resetTimer = setTimeout(() => {
+        button.classList.remove("is-copied", "is-failed");
+        button.lastChild.textContent = "Copy";
+    }, 1600);
+}
+
+const copyIcon = () => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 20 20");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.innerHTML = '<rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"></path>';
+    return svg;
+};
+
+/** A card for one upload or selected image; returns an object to update it while the upload runs. */
+function createCard(title) {
+    const preview = element("span", { class: "snippet-preview" });
+    const name = element("strong", { text: title });
+    const stateText = element("span", { class: "snippet-state" });
+    const progress = element("progress", { max: "100", value: "0", "aria-label": `Upload of ${title}` });
+    const body = element("div", { class: "snippet-body" }, [element("div", { class: "snippet-title" }, [name, stateText]), progress]);
+    const item = element("li", { class: "snippet-card" }, [preview, body]);
+    $("snippet-list").prepend(item);
+    $("snippets").hidden = false;
+
+    const card = { item, asset: null };
+    card.progress = (percent) => {
+        progress.value = percent;
+        stateText.textContent = `Uploading ${percent} %`;
+    };
+    card.fail = (message) => {
+        progress.remove();
+        stateText.textContent = message;
+        stateText.classList.add("is-error");
+    };
+    card.fill = (asset) => {
+        card.asset = asset;
+        state.cards.set(asset.id, card);
+        progress.remove();
+        stateText.textContent = `${formatDimensions(asset)} · ${formatSize(asset.size)}`;
+        stateText.classList.remove("is-error");
+        name.textContent = asset.fileName;
+        preview.replaceChildren(element("img", { src: asset.url, alt: "" }));
+
+        const fileName = element("input", { type: "text", value: asset.fileName, spellcheck: "false", autocomplete: "off" });
+        const altText = element("input", { type: "text", value: asset.altText, autocomplete: "off" });
+        const save = async () => {
+            const changes = {};
+            if (fileName.value.trim() !== card.asset.fileName) changes.fileName = fileName.value.trim();
+            if (altText.value.trim() !== card.asset.altText) changes.altText = altText.value.trim();
+            if (Object.keys(changes).length === 0) return;
+            // The card is rebuilt after saving; keyboard users stay in the field they were in.
+            const field = document.activeElement === fileName ? 0 : document.activeElement === altText ? 1 : -1;
+            try {
+                const updated = await request(`/assets/${card.asset.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(changes),
+                });
+                card.fill(updated);
+                replaceAsset(updated);
+                if (field >= 0) card.item.querySelectorAll(".field input")[field]?.focus();
+                announce(`Saved ${updated.fileName}.`);
+            } catch (error) {
+                stateText.textContent = error.message;
+                stateText.classList.add("is-error");
+                announce(error.message);
+            }
+        };
+        for (const input of [fileName, altText]) {
+            input.addEventListener("change", save);
+            input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); save(); } });
+        }
+
+        const format = element("select", { class: "snippet-format", "aria-label": "Snippet format" },
+            Object.entries(formats).map(([key, value]) => element("option", { value: key, selected: key === state.format, text: value.label })));
+        const code = element("code", { class: "snippet-code", tabindex: "0", text: snippetText(asset) });
+        const copy = element("button", { class: "copy-button", type: "button" }, [copyIcon(), element("span", { text: "Copy" })]);
+        copy.setAttribute("aria-label", `Copy snippet of ${asset.fileName}`);
+        copy.addEventListener("click", async () => {
+            const ok = await copyText(snippetText(card.asset));
+            flashCopied(copy, ok);
+            announce(ok ? "Copied to the clipboard." : "Copying failed. Select the text and copy it.");
+        });
+        format.addEventListener("change", () => {
+            state.format = format.value;
+            writeSetting("mdu-assets-snippet-format", state.format);
+            for (const other of state.cards.values()) other.refresh?.();
+        });
+        card.refresh = () => {
+            format.value = state.format;
+            code.textContent = snippetText(card.asset);
+        };
+        card.copyButton = copy;
+
+        body.replaceChildren(
+            element("div", { class: "snippet-title" }, [name, stateText]),
+            element("div", { class: "snippet-fields" }, [
+                element("label", { class: "field" }, [element("span", { text: "File name" }), fileName]),
+                element("label", { class: "field" }, [element("span", { text: "Alt text" }), altText]),
+            ]),
+            element("div", { class: "snippet-output" }, [format, code, copy]),
+        );
+        updateCopyAll();
+    };
+    return card;
+}
+
+function showSnippet(asset) {
+    const existing = state.cards.get(asset.id);
+    if (existing) {
+        $("snippet-list").prepend(existing.item);
+        existing.copyButton?.focus();
+    } else {
+        const card = createCard(asset.fileName);
+        card.fill(asset);
+        card.copyButton.focus();
+    }
+    $("snippets").scrollIntoView({ block: "nearest" });
+}
+
+function replaceAsset(asset) {
+    const index = state.assets.findIndex((a) => a.id === asset.id);
+    if (index >= 0) state.assets[index] = asset; else state.assets.unshift(asset);
+    renderAssets();
+}
+
+function updateCopyAll() {
+    $("copy-all").hidden = [...state.cards.values()].length < 2;
+}
+
+$("copy-all").addEventListener("click", async () => {
+    const cards = [...$("snippet-list").children].map((item) => [...state.cards.values()].find((c) => c.item === item)).filter(Boolean);
+    const ok = await copyText(cards.map((card) => snippetText(card.asset)).join("\n"));
+    announce(ok ? `Copied ${cards.length} snippets.` : "Copying failed.");
+});
+
+$("clear-snippets").addEventListener("click", () => {
+    state.cards.clear();
+    $("snippet-list").replaceChildren();
+    $("snippets").hidden = true;
+    $("upload-button").focus();
+});
+
+// Uploads
+const accepted = /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)$/;
+
+function pastedName(file) {
+    // Screenshots from the clipboard arrive as "image.png"; give them a name that says when they were taken.
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const extension = file.type.split("/")[1]?.replace("svg+xml", "svg").replace("jpeg", "jpg") || "png";
+    return `screenshot-${stamp}.${extension}`;
+}
+
+function upload(file, name, alt) {
+    const card = createCard(name);
+    return new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${api}/projects/${encodeURIComponent(state.project)}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}`);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+        xhr.setRequestHeader("Accept", "application/json");
+        xhr.responseType = "json";
+        xhr.upload.addEventListener("progress", (event) => {
+            if (event.lengthComputable) card.progress(Math.round((event.loaded / event.total) * 100));
+        });
+        xhr.addEventListener("load", () => {
+            if (xhr.status === 201) {
+                card.fill(xhr.response);
+                replaceAsset(xhr.response);
+                resolve(xhr.response);
+            } else {
+                card.fail(xhr.response?.detail || xhr.response?.title || `Upload failed (${xhr.status}).`);
+                resolve(null);
+            }
+        });
+        xhr.addEventListener("error", () => { card.fail("Upload failed: the server could not be reached."); resolve(null); });
+        xhr.send(file);
+    });
+}
+
+async function uploadFiles(files, { pasted = false } = {}) {
+    const images = [...files].filter((file) => accepted.test(file.type) || /\.svg$/i.test(file.name));
+    const skipped = files.length - images.length;
+    if (images.length === 0) {
+        announce(skipped > 0 ? "Only images can be uploaded." : "");
+        return;
+    }
+
+    announce(`Uploading ${images.length} ${images.length === 1 ? "image" : "images"}…`);
+    const results = (await Promise.all(images.map((file) =>
+        pasted || !file.name || file.name === "image.png"
+            ? upload(file, pastedName(file), "Screenshot")
+            : upload(file, file.name)))).filter(Boolean);
+
+    if (results.length === 0) {
+        announce("The upload failed.");
+        return;
+    }
+    // Copy right away where the browser allows it; otherwise the Copy button is one click away.
+    const copied = await copyText(results.map(snippetText).join("\n"));
+    const names = results.length === 1 ? results[0].fileName : `${results.length} images`;
+    announce(copied ? `Uploaded ${names}. The snippet is on the clipboard.` : `Uploaded ${names}. Press Copy to copy the snippet.`);
+    if (copied) for (const asset of results) flashCopied(state.cards.get(asset.id).copyButton, true);
+    state.cards.get(results[0].id).copyButton.focus({ preventScroll: true });
+    refreshProjectCounts();
+}
+
+async function refreshProjectCounts() {
+    try {
+        state.projects = (await request("/projects")).items;
+        renderProjects();
+    } catch { }
+}
+
+$("upload-button").addEventListener("click", () => $("file-input").click());
+$("file-input").addEventListener("change", (event) => {
+    uploadFiles(event.target.files);
+    event.target.value = "";
+});
+
+document.addEventListener("paste", (event) => {
+    // Text pasted into a field stays text.
+    if (event.target.closest?.("input, textarea, [contenteditable]")) return;
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (files.length === 0) return;
+    event.preventDefault();
+    uploadFiles(files, { pasted: true });
+});
+
+const dropZone = $("drop-zone");
+let dragDepth = 0;
+const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
+
+document.addEventListener("dragenter", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragDepth++;
+    dropZone.hidden = false;
+});
+document.addEventListener("dragover", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+});
+document.addEventListener("dragleave", (event) => {
+    if (!hasFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) dropZone.hidden = true;
+});
+document.addEventListener("drop", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    dropZone.hidden = true;
+    uploadFiles(event.dataTransfer.files);
+});
+
+load().catch((error) => {
+    $("empty-state").hidden = false;
+    $("empty-state").textContent = `Could not load the images: ${error.message}`;
+});
