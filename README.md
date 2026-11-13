@@ -2,7 +2,7 @@
 
 A self-hosted image server for [MDU](https://github.com/capjan/mdu) documentation. Drop or paste an image, get a stable link, and paste the ready-made Markdown into your docs.
 
-> **Status:** Milestone M0. The server skeleton builds as a Native AOT program and as a container, but has no features yet. Progress is tracked in the [milestones](https://github.com/capjan/mdu-assets/milestones).
+> **Status:** Milestone M1. Images can be uploaded through the API with Basic Auth and are served under stable public links; there is no web interface yet. Progress is tracked in the [milestones](https://github.com/capjan/mdu-assets/milestones).
 
 ## Why
 
@@ -39,7 +39,7 @@ The build workflow runs only when something under `Source/` changes.
 
 ## Build and run
 
-Requires the .NET 10 SDK, plus `clang` and `zlib1g-dev` on Linux for Native AOT. The server does nothing useful yet: it prepares its data directory and answers `GET /healthz`.
+Requires the .NET 10 SDK, plus `clang` and `zlib1g-dev` on Linux for Native AOT. There is no web interface yet; upload with curl, for example `curl -u admin:development-only -H "Content-Type: image/png" --data-binary @screenshot.png "http://127.0.0.1:5180/api/v1/projects/default/assets?name=screenshot.png"`.
 
 Run the commands in `Source`, where `global.json` selects the .NET 10 SDK:
 
@@ -49,7 +49,7 @@ dotnet test --solution MduAssets.slnx
 dotnet run --project MduAssets
 ```
 
-The development server listens on `http://127.0.0.1:5180` and keeps its data in `Source/MduAssets/data/` (ignored by Git). Native AOT build and container, also in `Source`:
+The development server serves the API on `http://127.0.0.1:5180` and public links on `http://127.0.0.1:5181`, keeps its data in `Source/MduAssets/data/` (ignored by Git) and creates the user `admin` with the password `development-only`. Native AOT build and container, also in `Source`:
 
 ```sh
 dotnet publish MduAssets -c Release -r osx-arm64 -o out

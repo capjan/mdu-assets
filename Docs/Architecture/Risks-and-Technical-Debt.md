@@ -36,4 +36,5 @@ Tracked as issues with the label [`decision`](https://github.com/capjan/mdu-asse
 | Debt | Reason | Payback |
 | --- | --- | --- |
 | Basic Auth in the browser | No clean sign-out | Session login after 1.0 |
-| SVG sanitizer copied from MDU (planned) | Faster than a shared package | Shared package if the two copies start to drift |
+| Own SVG sanitizer next to MDU's icon reader ([ADR-0012](Architecture-Decisions/0012-Own-SVG-Sanitizer.md)) | Icons and complete files need different cleaning | Apply fixes to the allowlist in both places; share a package if the rules start to drift |
+| Use cases in the endpoints | Too few for a separate core project in M1 | `MduAssets.Core` when roles and versions arrive (M3, M6) |
