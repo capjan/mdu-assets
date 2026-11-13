@@ -25,6 +25,9 @@ else
         console.UseUtcTimestamp = true;
         console.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
     });
+// Nothing protects data with the keys yet (no cookies before session sign-in, AUTH-09), so the warning about
+// unencrypted keys would only be noise on every start. The keys folder is readable by the server user only.
+builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager", LogLevel.Error);
 
 ServerSettings settings;
 DataDirectory dataDirectory;
@@ -76,6 +79,7 @@ app.Use((context, next) =>
     context.Response.Headers.XContentTypeOptions = "nosniff";
     return next(context);
 });
+app.UseCrossSiteRequestProtection(settings);
 app.UseAuthentication();
 app.UseAuthorization();
 

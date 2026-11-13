@@ -23,7 +23,7 @@ public sealed class DataDirectory
     /// <summary>Uploads in progress. On the same file system as <see cref="BlobsPath"/>, so finished files can be renamed atomically.</summary>
     public string TempPath => Path.Combine(Root, "tmp");
 
-    /// <summary>Data protection keys of ASP.NET Core, for example for future sign-in cookies.</summary>
+    /// <summary>Data protection keys of ASP.NET Core, for example for future sign-in cookies. Only the server user may read them.</summary>
     public string KeysPath => Path.Combine(Root, "keys");
 
     /// <summary>Creates the folders and removes leftovers of interrupted uploads.</summary>
@@ -32,6 +32,9 @@ public sealed class DataDirectory
         Directory.CreateDirectory(Root);
         Directory.CreateDirectory(BlobsPath);
         Directory.CreateDirectory(TempPath);
+        Directory.CreateDirectory(KeysPath);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(KeysPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 
         foreach (var file in Directory.EnumerateFiles(TempPath))
             File.Delete(file);

@@ -132,7 +132,7 @@ curl -u admin -H "Content-Type: image/png" --data-binary @screenshot.png \
   "https://assets.example.com/api/v1/projects/default/assets?name=screenshot.png"
 ```
 
-The answer contains the public `url`, the `markdown` snippet, and width, height and size.
+The answer contains the public `url`, the `markdown` snippet, and width, height and size. Scripts running in a browser cannot change anything from another site: the server rejects such requests by their `Origin` and `Sec-Fetch-Site` headers.
 
 ## Update
 
