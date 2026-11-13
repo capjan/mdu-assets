@@ -80,11 +80,13 @@ API errors are `application/problem+json` with a stable `type` URI per error kin
 
 ## Configuration
 
-Settings come from `appsettings.json` and `MDU_ASSETS_*` environment variables, bound with the configuration source generator. The server refuses to start with incomplete or contradicting settings (for example the same host for UI and public links in production) and says which setting is wrong.
+Settings come from `appsettings.json` and `MDU_ASSETS_*` environment variables, bound with the configuration source generator. `appsettings.json` is read from the program folder, wherever the program is started. The data directory is prepared and the migrations run before the server accepts requests; an unusable data directory, a changed migration or a database from a newer version stops the start. Later, the server also refuses to start with incomplete or contradicting settings (for example the same host for UI and public links in production) and says which setting is wrong.
 
 ## Observability
 
-Structured logs on stdout, one line per request with status, duration and route (no query strings with tokens), and `/healthz` for container health checks.
+- Logs go to stdout as one JSON object per line (single-line text in the `Development` environment).
+- One log line per request with method, path, status and duration. The query string is never logged, so tokens in it cannot leak; ASP.NET Core's own request logs are kept at `Warning` for the same reason.
+- `/healthz` reports whether the database answers.
 
 ## User interface
 
@@ -94,9 +96,11 @@ Structured logs on stdout, one line per request with status, duration and route 
 
 ## Testing
 
+Tests use xUnit v3 on Microsoft Testing Platform: `dotnet test --solution MduAssets.slnx` in `Source`, where `global.json` selects the SDK and the test runner.
+
 | Level | Scope |
 | --- | --- |
-| Unit | Core use cases, permission matrix, ID generation, snippet building, migrations |
+| Unit | Core use cases, permission matrix, ID generation, snippet building, migrations, blob store |
 | Integration | HTTP tests against the host with a temporary data directory and SQLite file; upload, delivery, caching headers, roles |
-| Native | CI publishes with Native AOT on every target and runs smoke tests with libvips |
+| Native | CI publishes the server and the spike with Native AOT on every target and starts them; Docker images are built and started on native amd64 and arm64 runners |
 | UI | Keyboard and focus checks in a served instance before a UI change is merged |

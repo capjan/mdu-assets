@@ -2,7 +2,7 @@
 
 A self-hosted image server for [MDU](https://github.com/capjan/mdu) documentation. Drop or paste an image, get a stable link, and paste the ready-made Markdown into your docs.
 
-> **Status:** Planning. This repository currently holds the requirements and a technical spike. There is no runnable server yet.
+> **Status:** Milestone M0. The server skeleton builds as a Native AOT program and as a container, but has no features yet. Progress is tracked in the [milestones](https://github.com/capjan/mdu-assets/milestones).
 
 ## Why
 
@@ -37,17 +37,27 @@ MDU sites are plain Markdown. Local images work well, but screenshots that chang
 
 The build workflow runs only when something under `Source/` changes.
 
-## Run the spike
+## Build and run
 
-Requires the .NET 10 SDK, plus `clang` and `zlib1g-dev` on Linux:
+Requires the .NET 10 SDK, plus `clang` and `zlib1g-dev` on Linux for Native AOT. The server does nothing useful yet: it prepares its data directory and answers `GET /healthz`.
+
+Run the commands in `Source`, where `global.json` selects the .NET 10 SDK:
 
 ```sh
-cd Source/Spikes/NetVipsAot
-dotnet publish -c Release -r osx-arm64 -o out/osx-arm64
-out/osx-arm64/NetVipsAot
+cd Source
+dotnet test --solution MduAssets.slnx
+dotnet run --project MduAssets
 ```
 
-Use `linux-x64` or `linux-arm64` as the runtime on Linux. The exit code is the number of failed checks.
+The development server listens on `http://127.0.0.1:5180` and keeps its data in `Source/MduAssets/data/` (ignored by Git). Native AOT build and container, also in `Source`:
+
+```sh
+dotnet publish MduAssets -c Release -r osx-arm64 -o out
+docker build -t mdu-assets .
+docker run --rm -p 127.0.0.1:8080:8080 -v mdu-assets-data:/data mdu-assets
+```
+
+The [NetVips AOT spike](Docs/Architecture/NetVips-AOT-Spike.md) is published and run the same way in `Source/Spikes/NetVipsAot`; its exit code is the number of failed checks.
 
 ## Contributing
 
