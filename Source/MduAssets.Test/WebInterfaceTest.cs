@@ -59,10 +59,34 @@ public sealed class WebInterfaceTest : IDisposable
     [Theory]
     [InlineData("/ui/tokens.pin.json")]
     [InlineData("/ui/missing.js")]
-    [InlineData("/ui/../appsettings.json")]
     public async Task ServesNothingElse(string path)
     {
         Assert.Equal(HttpStatusCode.NotFound, (await _server.Ui().GetAsync(path, TestContext.Current.CancellationToken)).StatusCode);
+    }
+
+    /// <summary>
+    /// HttpClient would resolve <c>..</c> before sending, so the raw path goes straight to the server.
+    /// <c>/ui/app.js</c> shows that the request reaches the file endpoint at all.
+    /// </summary>
+    [Theory]
+    [InlineData("/ui/app.js", HttpStatusCode.OK)]
+    [InlineData("/ui/../appsettings.json", HttpStatusCode.NotFound)]
+    [InlineData("/ui/../MduAssets.dll", HttpStatusCode.NotFound)]
+    [InlineData("/ui/..%2Fappsettings.json", HttpStatusCode.NotFound)]
+    [InlineData("/ui//etc/passwd", HttpStatusCode.NotFound)]
+    public async Task ServesNoFilesOutsideTheInterface(string rawPath, HttpStatusCode expected)
+    {
+        var context = await _server.Send(request =>
+        {
+            request.Request.Method = "GET";
+            request.Request.Scheme = "http";
+            request.Request.Host = new Microsoft.AspNetCore.Http.HostString("ui.test");
+            request.Request.Path = new Microsoft.AspNetCore.Http.PathString(rawPath);
+            request.Request.Headers.Authorization = "Basic " + Convert.ToBase64String(
+                System.Text.Encoding.UTF8.GetBytes($"{TestServer.AdminName}:{TestServer.AdminPassword}"));
+        });
+
+        Assert.Equal((int)expected, context.Response.StatusCode);
     }
 
     [Fact]

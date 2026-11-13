@@ -20,10 +20,12 @@ if (!File.Exists(source))
     return 1;
 }
 
-var ui = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "MduAssets", "Ui"));
-if (!Directory.Exists(ui))
+// The web interface is found from the working directory, not from the build output, whose depth depends on
+// the configuration, the runtime and artifacts settings.
+var ui = FindUi(Environment.CurrentDirectory);
+if (ui is null)
 {
-    Console.Error.WriteLine($"Cannot find the web interface folder at {ui}.");
+    Console.Error.WriteLine($"Cannot find MduAssets/Ui from {Environment.CurrentDirectory}. Run the tool inside the repository.");
     return 1;
 }
 
@@ -41,6 +43,21 @@ File.WriteAllText(Path.Combine(ui, "tokens.pin.json"),
 
 Console.WriteLine($"Copied tokens.css ({bytes.Length:N0} bytes) from {pin["commit"]}.");
 return 0;
+
+// Walks up to the folder that holds MduAssets.slnx, directly or in Source.
+static string? FindUi(string start)
+{
+    for (var directory = new DirectoryInfo(start); directory is not null; directory = directory.Parent)
+    {
+        foreach (var source in new[] { directory.FullName, Path.Combine(directory.FullName, "Source") })
+        {
+            if (File.Exists(Path.Combine(source, "MduAssets.slnx")) && Directory.Exists(Path.Combine(source, "MduAssets", "Ui")))
+                return Path.Combine(source, "MduAssets", "Ui");
+        }
+    }
+
+    return null;
+}
 
 static string? GitCommit(string directory)
 {
