@@ -35,7 +35,7 @@ MDU sites are plain Markdown. Local images work well, but screenshots that chang
 | [`Docs`](Docs) | All documentation, rendered with MDU: [requirements](Docs/Requirements.md) (German), [arc42 architecture](Docs/Architecture/README.md) with decisions, and the [NetVips AOT spike report](Docs/Architecture/NetVips-AOT-Spike.md) (German) |
 | [`Source`](Source) | Everything that compiles; currently the [NetVips AOT spike](Source/Spikes/NetVipsAot) |
 
-CI builds only when something under `Source/` or `.github/workflows/` changes.
+The build workflow runs only when something under `Source/` changes.
 
 ## Run the spike
 
