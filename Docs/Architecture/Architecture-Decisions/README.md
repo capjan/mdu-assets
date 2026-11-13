@@ -20,6 +20,8 @@ Each significant, hard-to-reverse decision is recorded as one file in the [MADR]
 | [0009](0009-Separate-Public-Host.md) | Serve public links from a separate host | Accepted |
 | [0010](0010-MDU-Design-Tokens.md) | Copy the MDU design tokens with a drift test | Accepted |
 | [0011](0011-AVIF-in-the-Background.md) | Encode AVIF variants in the background | Accepted |
+| [0012](0012-Own-SVG-Sanitizer.md) | Clean SVG uploads with an own sanitizer that follows MDU's allowlist | Accepted |
+| [0013](0013-Image-Headers-Without-an-Image-Library.md) | Read image type and size from headers without an image library | Accepted |
 
 ## Template
 
