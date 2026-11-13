@@ -25,4 +25,5 @@ Basic Auth over HTTPS for the UI and the API, with PBKDF2-SHA256 password hashes
 
 - Fast to build; works with curl and every HTTP client.
 - No clean sign-out in browsers until session login exists.
+- Browsers attach cached Basic Auth credentials to requests from any site, so the server rejects changing requests whose `Sec-Fetch-Site` or `Origin` header shows another site. Tools outside a browser send neither header and are not affected.
 - Passwords never end up in tool configurations.

@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Tools/">
+    <Project Path="Tools/SyncTokens/SyncTokens.csproj" />
+  </Folder>
   <Project Path="MduAssets.Imaging.Test/MduAssets.Imaging.Test.csproj" />
   <Project Path="MduAssets.Imaging/MduAssets.Imaging.csproj" />
   <Project Path="MduAssets.Storage.Test/MduAssets.Storage.Test.csproj" />

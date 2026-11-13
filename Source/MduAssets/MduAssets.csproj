@@ -16,4 +16,8 @@
     <InternalsVisibleTo Include="MduAssets.Test" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Ui\**\*" LogicalName="Ui/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

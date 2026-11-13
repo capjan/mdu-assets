@@ -3,7 +3,9 @@ using MduAssets.Api;
 using MduAssets.Delivery;
 using MduAssets.Security;
 using MduAssets.Storage;
+using MduAssets.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 
 // Settings files sit next to the program, wherever it is started from.
 var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
@@ -23,6 +25,9 @@ else
         console.UseUtcTimestamp = true;
         console.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
     });
+// Nothing protects data with the keys yet (no cookies before session sign-in, AUTH-09), so the warning about
+// unencrypted keys would only be noise on every start. The keys folder is readable by the server user only.
+builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager", LogLevel.Error);
 
 ServerSettings settings;
 DataDirectory dataDirectory;
@@ -53,10 +58,13 @@ builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<AssetStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<CredentialCache>();
+builder.Services.AddSingleton<UiFiles>();
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 builder.Services.AddProblemDetails();
 builder.Services.ConfigureHttpJsonOptions(json => json.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(settings.ApplyTo);
+// ASP.NET Core keeps its data protection keys in the data directory, so they survive container restarts.
+builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(dataDirectory.KeysPath));
 builder.Services
     .AddAuthentication(BasicAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>(BasicAuthenticationHandler.SchemeName, null);
@@ -71,6 +79,7 @@ app.Use((context, next) =>
     context.Response.Headers.XContentTypeOptions = "nosniff";
     return next(context);
 });
+app.UseCrossSiteRequestProtection(settings);
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -82,7 +91,12 @@ app.MapMethods("/i/{id}/{**name}", ["GET", "HEAD"], PublicLinks.Serve).RequireHo
 
 // API: only on the UI host, signed in.
 var api = app.MapGroup("/api/v1").RequireHost(settings.UiHost).RequireAuthorization();
-api.MapPost("/projects/{project}/assets", UploadEndpoint.Handle);
+AssetEndpoints.Map(api);
+
+// Web interface: only on the UI host, signed in, so the browser asks for the password on the first visit.
+var ui = app.MapGroup("").RequireHost(settings.UiHost).RequireAuthorization();
+ui.MapGet("/", (UiFiles files, HttpContext context) => files.Serve("index.html", context));
+ui.MapGet("/ui/{**path}", (string path, UiFiles files, HttpContext context) => files.Serve(path, context));
 
 if (createdAdmin is not null)
     app.Logger.LogInformation("Created the first administrator {Admin}", createdAdmin);
