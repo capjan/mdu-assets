@@ -100,27 +100,82 @@ public sealed class AssetStore(Database database)
         }
     }
 
+    /// <summary>All projects with the number and total size of their assets, ordered by name.</summary>
+    public IReadOnlyList<ProjectSummary> ListProjects()
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT p.slug, p.name, count(a.id), coalesce(sum(v.size), 0)
+            FROM projects p
+            LEFT JOIN assets a ON a.project_id = p.id
+            LEFT JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
+            GROUP BY p.id
+            ORDER BY p.name COLLATE NOCASE;
+            """;
+        using var reader = command.ExecuteReader();
+        var projects = new List<ProjectSummary>();
+        while (reader.Read())
+            projects.Add(new ProjectSummary(reader.GetString(0), reader.GetString(1), reader.GetInt32(2), reader.GetInt64(3)));
+        return projects;
+    }
+
+    /// <summary>The current versions of all assets of a project, newest first.</summary>
+    public IReadOnlyList<AssetFile> List(long projectId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectCurrent + " WHERE a.project_id = $project ORDER BY a.created_at DESC, a.id;";
+        command.Parameters.AddWithValue("$project", projectId);
+        using var reader = command.ExecuteReader();
+        var assets = new List<AssetFile>();
+        while (reader.Read())
+            assets.Add(ReadAsset(reader));
+        return assets;
+    }
+
     /// <summary>Finds the current version of an asset, or <c>null</c> for an unknown id.</summary>
     public AssetFile? FindCurrent(string id)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT a.id, a.file_name, a.alt_text, v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, v.created_at
-            FROM assets a
-            JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
-            WHERE a.id = $id;
-            """;
+        command.CommandText = SelectCurrent + " WHERE a.id = $id;";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
-        if (!reader.Read())
-            return null;
+        return reader.Read() ? ReadAsset(reader) : null;
+    }
 
-        return new AssetFile(
+    /// <summary>Changes the file name and alt text. The public link stays valid, because only the id is used for lookups.</summary>
+    /// <returns>The updated asset, or <c>null</c> for an unknown id.</returns>
+    public AssetFile? Update(string id, string fileName, string altText)
+    {
+        using (var connection = database.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE assets SET file_name = $fileName, alt_text = $alt WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            command.Parameters.AddWithValue("$fileName", fileName);
+            command.Parameters.AddWithValue("$alt", altText);
+            if (command.ExecuteNonQuery() == 0)
+                return null;
+        }
+
+        return FindCurrent(id);
+    }
+
+    private const string SelectCurrent = """
+        SELECT a.id, a.file_name, a.alt_text, v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, v.created_at
+        FROM assets a
+        JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
+        """;
+
+    private static AssetFile ReadAsset(SqliteDataReader reader) =>
+        new(
             reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetString(4),
             reader.GetString(5), reader.GetInt64(6),
             reader.IsDBNull(7) ? null : reader.GetInt32(7),
             reader.IsDBNull(8) ? null : reader.GetInt32(8),
             Clock.Parse(reader.GetString(9)));
-    }
 }
+
+public sealed record ProjectSummary(string Slug, string Name, int AssetCount, long TotalSize);

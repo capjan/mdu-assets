@@ -24,7 +24,7 @@ public static class UploadEndpoint
     {
         var target = assets.FindProject(project);
         if (target is null)
-            return Problem(StatusCodes.Status404NotFound, "Unknown project", $"There is no project '{project}'.");
+            return AssetEndpoints.UnknownProject(project);
 
         var limit = settings.Options.MaxUploadBytes;
         if (context.Request.ContentLength > limit + MultipartOverhead)
@@ -82,12 +82,8 @@ public static class UploadEndpoint
         var userId = long.Parse(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!, System.Globalization.CultureInfo.InvariantCulture);
 
         var asset = assets.Create(new NewAsset(target.Id, fileName, altText, blob.Hash, info.ContentType, blob.Size, info.Width, info.Height, userId));
-        var url = settings.PublicLink(asset.Id, asset.FileName);
-        var response = new AssetResponse(
-            asset.Id, url, asset.FileName, asset.AltText,
-            Snippets.Markdown(asset.AltText, url), Snippets.Html(asset.AltText, url, asset.Width, asset.Height),
-            asset.Width, asset.Height, asset.Size, asset.ContentType, asset.Version);
-        return TypedResults.Created(url, response);
+        var response = AssetResponse.From(asset, settings);
+        return TypedResults.Created(response.Url, response);
     }
 
     private static async Task<(byte[] Data, string? Name, string? Alt)> ReadForm(HttpRequest request, long limit, CancellationToken cancellationToken)
