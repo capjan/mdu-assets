@@ -19,7 +19,7 @@ The server strips metadata, creates thumbnails and resized variants and converts
 
 ## Decision
 
-NetVips with NetVips.Native. The [NetVips AOT spike](https://github.com/capjan/mdu-assets/blob/main/Spikes/NetVipsAot/README.md) built without AOT warnings and passed every check on linux-x64, linux-arm64 and osx-arm64, including AVIF.
+NetVips with NetVips.Native. The [NetVips AOT spike](../NetVips-AOT-Spike.md) built without AOT warnings and passed every check on linux-x64, linux-arm64 and osx-arm64, including AVIF.
 
 ## Consequences
 

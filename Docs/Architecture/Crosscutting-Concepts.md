@@ -72,7 +72,7 @@ The table sketch is in section 8 of the [requirements](../Requirements.md#8-date
 
 ## Image processing
 
-NetVips runs with the libvips operation cache disabled and limited concurrency. A semaphore bounds parallel image jobs so that memory stays predictable. Orientation is applied before metadata is stripped; the ICC profile is kept. AVIF is never encoded on the request path. Details and measurements are in the [NetVips AOT spike](https://github.com/capjan/mdu-assets/blob/main/Spikes/NetVipsAot/README.md).
+NetVips runs with the libvips operation cache disabled and limited concurrency. A semaphore bounds parallel image jobs so that memory stays predictable. Orientation is applied before metadata is stripped; the ICC profile is kept. AVIF is never encoded on the request path. Details and measurements are in the [NetVips AOT spike](NetVips-AOT-Spike.md).
 
 ## Errors and validation
 

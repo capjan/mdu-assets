@@ -9,7 +9,7 @@ description: Known risks, open questions and technical debt of the MDU Asset Ser
 
 | Risk | Impact | Handling |
 | --- | --- | --- |
-| NetVips under Native AOT | Image processing unusable in AOT builds | Mitigated: the [spike](https://github.com/capjan/mdu-assets/blob/main/Spikes/NetVipsAot/README.md) shows 0 AOT warnings and all checks green on every target. CI keeps running it. |
+| NetVips under Native AOT | Image processing unusable in AOT builds | Mitigated: the [spike](NetVips-AOT-Spike.md) shows 0 AOT warnings and all checks green on every target. CI keeps running it. |
 | Native library next to the program | No single-file binary; macOS signing must include libvips | Accepted. Archives and Docker images; sign and notarize program and library. |
 | Builds under emulation | The .NET SDK crashes under x64 emulation | Build per architecture on native runners or cross-compile. |
 | Public links are capability URLs | A shared link cannot be taken back except by deleting the image | Explained in the UI and documentation; deletion answers 410 immediately. |

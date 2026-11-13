@@ -32,15 +32,17 @@ MDU sites are plain Markdown. Local images work well, but screenshots that chang
 
 | Path | Contents |
 | --- | --- |
-| [`Docs/Requirements.md`](Docs/Requirements.md) | Requirements, decisions, API outline, data model, and open questions (German) |
-| [`Spikes/NetVipsAot`](Spikes/NetVipsAot) | Spike that verifies NetVips under Native AOT on linux-x64, linux-arm64, and osx-arm64 (report in German) |
+| [`Docs`](Docs) | All documentation, rendered with MDU: [requirements](Docs/Requirements.md) (German), [arc42 architecture](Docs/Architecture/README.md) with decisions, and the [NetVips AOT spike report](Docs/Architecture/NetVips-AOT-Spike.md) (German) |
+| [`Source`](Source) | Everything that compiles; currently the [NetVips AOT spike](Source/Spikes/NetVipsAot) |
+
+The build workflow runs only when something under `Source/` changes.
 
 ## Run the spike
 
 Requires the .NET 10 SDK, plus `clang` and `zlib1g-dev` on Linux:
 
 ```sh
-cd Spikes/NetVipsAot
+cd Source/Spikes/NetVipsAot
 dotnet publish -c Release -r osx-arm64 -o out/osx-arm64
 out/osx-arm64/NetVipsAot
 ```
