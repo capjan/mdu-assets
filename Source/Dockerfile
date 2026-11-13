@@ -10,9 +10,11 @@ WORKDIR /src
 COPY global.json Directory.Build.props ./
 COPY MduAssets/MduAssets.csproj MduAssets/
 COPY MduAssets.Storage/MduAssets.Storage.csproj MduAssets.Storage/
+COPY MduAssets.Imaging/MduAssets.Imaging.csproj MduAssets.Imaging/
 RUN dotnet restore MduAssets/MduAssets.csproj -r linux-$(dpkg --print-architecture | sed 's/amd64/x64/')
 COPY MduAssets/ MduAssets/
 COPY MduAssets.Storage/ MduAssets.Storage/
+COPY MduAssets.Imaging/ MduAssets.Imaging/
 RUN dotnet publish MduAssets/MduAssets.csproj --configuration Release --no-restore \
         -r linux-$(dpkg --print-architecture | sed 's/amd64/x64/') \
         -warnaserror:IL2026,IL2104,IL3050,IL3053 \

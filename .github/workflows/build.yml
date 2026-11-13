@@ -59,12 +59,16 @@ jobs:
     - name: Smoke test the native server
       env:
         MDU_ASSETS_DATADIRECTORY: ${{ runner.temp }}/data
+        MDU_ASSETS_UIBASEURL: http://127.0.0.1:8080
+        MDU_ASSETS_PUBLICBASEURL: http://localhost:8080
+        MDU_ASSETS_ALLOWHTTP: "true"
+        MDU_ASSETS_ADMIN_USER: admin
+        MDU_ASSETS_ADMIN_PASSWORD: smoke-test-password
         ASPNETCORE_HTTP_PORTS: 8080
       run: |
         "$RUNNER_TEMP/server/mdu-assets" &
         pid=$!
-        for i in $(seq 30); do curl -sf http://127.0.0.1:8080/healthz && break; sleep 1; done
-        curl -sf http://127.0.0.1:8080/healthz
+        ./smoke-test.sh http://127.0.0.1:8080 http://localhost:8080 admin smoke-test-password
         kill $pid
         test -f "$MDU_ASSETS_DATADIRECTORY/mdu-assets.db"
 
@@ -89,9 +93,14 @@ jobs:
 
     - name: Smoke test the container
       run: |
-        docker run --detach --name mdu-assets --publish 127.0.0.1:8080:8080 mdu-assets:ci
-        for i in $(seq 30); do curl -sf http://127.0.0.1:8080/healthz && break; sleep 1; done
-        curl -sf http://127.0.0.1:8080/healthz
+        docker run --detach --name mdu-assets --publish 127.0.0.1:8080:8080 \
+          --env MDU_ASSETS_UIBASEURL=http://127.0.0.1:8080 \
+          --env MDU_ASSETS_PUBLICBASEURL=http://localhost:8080 \
+          --env MDU_ASSETS_ALLOWHTTP=true \
+          --env MDU_ASSETS_ADMIN_USER=admin \
+          --env MDU_ASSETS_ADMIN_PASSWORD=smoke-test-password \
+          mdu-assets:ci
+        Source/smoke-test.sh http://127.0.0.1:8080 http://localhost:8080 admin smoke-test-password
         test "$(docker inspect --format '{{.Config.User}}' mdu-assets)" = app
         docker logs mdu-assets
         docker rm --force mdu-assets
