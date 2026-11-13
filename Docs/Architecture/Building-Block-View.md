@@ -64,11 +64,12 @@ The solution is `Source/MduAssets.slnx`. Everything that compiles lives under `S
 
 | Project | Contents | Status |
 | --- | --- | --- |
-| `MduAssets` | Host, published as the `mdu-assets` program: `ServerSettings` (validated configuration), logging, request log, health check, startup checks; `Security/` (Basic Auth handler, PBKDF2 hashing, credential cache, first admin); `Api/` (upload endpoint, file names, snippets, JSON source generation); `Delivery/` (public links). Later: more endpoints, embedded UI files, commands such as `backup` | Since M0 |
+| `MduAssets` | Host, published as the `mdu-assets` program: `ServerSettings` (validated configuration), logging, request log, health check, startup checks; `Security/` (Basic Auth handler, PBKDF2 hashing, credential cache, first admin); `Api/` (upload, list, detail and edit endpoints, file names, snippets, JSON source generation); `Delivery/` (public links); `Web/UiFiles` (serves the embedded web interface with its content security policy); `Ui/` (the web interface: `index.html`, `app.js`, `app.css`, the copied `tokens.css` with its pin file). Later: commands such as `backup` | Since M0 |
 | `MduAssets.Storage` | `DataDirectory` (folder layout), `Database` (SQLite connections in WAL mode), `MigrationRunner` with embedded `Migrations/NNNN_name.sql`, `BlobStore` (content-addressed files), `UserStore`, `AssetStore` (projects, assets, versions), `AssetId`; later the variant cache | Since M0 |
 | `MduAssets.Imaging` | `ImageDetector` (type and size from the header, [ADR-0013](Architecture-Decisions/0013-Image-Headers-Without-an-Image-Library.md)), `SvgSanitizer` ([ADR-0012](Architecture-Decisions/0012-Own-SVG-Sanitizer.md)); later the NetVips wrapper and variant rules | Since M1 |
 | `MduAssets.Core` | Domain model and use cases: projects, assets, versions, folders, permissions; no ASP.NET Core dependency. Until roles and versions arrive, the few use cases live in the endpoints | Planned (M3) |
 | `MduAssets.Test`, `MduAssets.Storage.Test`, `MduAssets.Imaging.Test` | xUnit v3 tests; HTTP-level tests against the host with a temporary data directory and two host names | Since M0 |
 | `Spikes/NetVipsAot` | [NetVips AOT spike](NetVips-AOT-Spike.md), kept running in CI | Since the spike |
+| `Tools/SyncTokens` | Copies `tokens.css` from the MDU design system and writes the pin file ([ADR-0010](Architecture-Decisions/0010-MDU-Design-Tokens.md)) | Since M2 |
 
 The split keeps NetVips and SQLite behind small interfaces, so the core can be tested without native libraries and a storage backend could be added later without touching the use cases.

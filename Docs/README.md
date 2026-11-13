@@ -13,3 +13,4 @@ The MDU Asset Server stores images for MDU documentation and hands out links tha
 | --- | --- |
 | [Architecture](Architecture/README.md) | arc42 architecture documentation with the architecture decisions |
 | [Requirements](Requirements.md) | Requirements from the initial interview, in German |
+| [Deployment](Deployment.md) | Run the server on a VPS with Docker Compose and Caddy |

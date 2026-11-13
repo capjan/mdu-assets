@@ -51,6 +51,7 @@ The table sketch is in section 8 of the [requirements](../Requirements.md#8-date
 | Authentication | Basic Auth for the UI and API, accepted only when the request is HTTPS, directly or as reported by a trusted proxy. PBKDF2-SHA256 with 600,000 iterations; because Basic Auth sends the password with every request, a verified password is remembered for five minutes in memory, keyed by a hash of user, stored hash and password. Locked users are rejected on the next request. Personal API tokens (shown once, stored as hash, scoped, expiring) for tools from M8. Later: session login, passkeys, OIDC. |
 | Authorization | Every endpoint checks the caller's project role (Viewer, Editor, Owner) or admin flag in one place before the use case runs. The permission matrix is in section 4.2 of the requirements. |
 | Public links | Capability URLs: unauthenticated, but with random IDs of at least 10 base62 characters; 404s are rate limited to make guessing pointless. |
+| Web interface | Served only on the UI host and only to signed-in users. A strict content security policy allows scripts, styles and requests only from the UI host itself and images also from the public host; no inline scripts or styles, no framing. |
 | Uploads | Type from content, not from the name; size and pixel limits before decoding; SVG sanitized on upload; served with `nosniff` and, for SVG, a sandboxing CSP; served only from the public host. |
 | Privacy | EXIF and GPS removed from images; statistics keep counts, times and referrer pages only, no IP addresses or user agents; no cookies on the public host. |
 | Abuse | Rate limits for sign-in, uploads, the public check endpoint and 404s; quotas per project. |
@@ -90,9 +91,11 @@ Settings come from `appsettings.json` and `MDU_ASSETS_*` environment variables, 
 
 ## User interface
 
-- Embedded static files, plain JavaScript modules, no build step; the UI uses only the public JSON API.
-- Design tokens from MDU (`tokens.css`), light, dark and automatic mode, MDU components such as header, sidebar tree, tiles and callouts.
-- Keyboard focus only on `:focus-visible` with the MDU outline; full keyboard operation; a live region announces upload results and copy confirmations; reduced motion respected.
+- Embedded static files, plain JavaScript modules, no build step; the UI uses only the public JSON API. API URLs are built from `location.origin`, because a page opened with credentials in the URL would otherwise make `fetch()` refuse every relative request.
+- Design tokens from MDU (`tokens.css`, unchanged copy checked against `tokens.pin.json`), light, dark and automatic mode with the MDU theme switch (stored as `mdu-theme`, restored before the first paint), MDU components: sticky glass header, sidebar, cards like tag cards, tables without vertical lines, one filled button for the main action.
+- Uploads: drop anywhere (an overlay names the target project), paste anywhere outside text fields (pasted images get `screenshot-<date>-<time>` and the alt text "Screenshot"), or the file picker. `XMLHttpRequest` reports progress per file. After the upload, the snippet is copied when the browser allows it; otherwise focus moves to its Copy button.
+- Snippets: Markdown, URL or HTML (choice remembered); file name and alt text are edited in place and saved on Enter or when leaving the field.
+- Keyboard focus only on `:focus-visible` with the MDU outline (inset where a container clips); a live region announces uploads, saves and copies; reduced motion turns transitions off.
 
 ## Testing
 

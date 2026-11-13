@@ -5,6 +5,8 @@ description: How the MDU Asset Server runs on a VPS with Docker behind a reverse
 
 # Deployment View
 
+Step-by-step instructions for this setup are in the [deployment guide](../Deployment.md).
+
 ## Reference installation: VPS with Docker
 
 The first production instance runs on a VPS with Docker Compose. A reverse proxy (Caddy in the reference setup) terminates TLS for two host names and forwards both to the same container.
@@ -69,5 +71,5 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 | Option | Notes |
 | --- | --- |
 | Native binary | Archive with the program, libvips and license texts for linux-x64, linux-arm64 and osx-arm64; macOS builds signed and notarized. |
-| Local development | `dotnet run --project MduAssets` in `Source` serves the UI and API on `http://127.0.0.1:5180` and public links on `http://127.0.0.1:5181`, keeps its data in `Source/MduAssets/data/` (ignored by Git), allows HTTP and creates the user `admin` with the password `development-only`. |
+| Local development | `dotnet run --project MduAssets` in `Source` serves the web interface and API on `http://127.0.0.1:5180` and public links on `http://127.0.0.1:5181`, keeps its data in `Source/MduAssets/data/` (ignored by Git), allows HTTP and creates the user `admin` with the password `development-only`. |
 | Image build | `docker build -t mdu-assets .` in `Source` builds for the architecture of the Docker host. |
