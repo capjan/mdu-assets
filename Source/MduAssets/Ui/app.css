@@ -527,6 +527,8 @@ h2 {
 
 .empty-state { color: var(--text-secondary); }
 
+.load-more { margin-top: 1rem; }
+
 /* Drop zone over the whole window while files are dragged. */
 .drop-zone {
     position: fixed;

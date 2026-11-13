@@ -8,6 +8,7 @@ const state = {
     project: params.get("project") || "default",
     projects: [],
     assets: [],
+    next: null,
     view: readSetting("mdu-assets-view", "grid"),
     sort: { key: "createdAt", direction: "descending" },
     format: readSetting("mdu-assets-snippet-format", "markdown"),
@@ -92,11 +93,32 @@ async function load() {
     await loadAssets();
 }
 
+// The list comes in pages, newest first; "Show more images" loads the next one.
+const assetsPath = (after) => `/projects/${encodeURIComponent(state.project)}/assets?limit=200${after ? `&after=${encodeURIComponent(after)}` : ""}`;
+
 async function loadAssets() {
-    const list = await request(`/projects/${encodeURIComponent(state.project)}/assets`);
+    const list = await request(assetsPath());
     state.assets = list.items;
+    state.next = list.next;
     renderAssets();
 }
+
+$("load-more").addEventListener("click", async () => {
+    const button = $("load-more");
+    button.disabled = true;
+    try {
+        const list = await request(assetsPath(state.next));
+        const known = new Set(state.assets.map((a) => a.id));
+        state.assets.push(...list.items.filter((a) => !known.has(a.id)));
+        state.next = list.next;
+        renderAssets();
+        announce(`Showing ${numberFormat.format(state.assets.length)} images.`);
+    } catch (error) {
+        announce(error.message);
+    } finally {
+        button.disabled = false;
+    }
+});
 
 function currentProject() {
     return state.projects.find((p) => p.slug === state.project);
@@ -107,6 +129,9 @@ function renderProjects() {
     $("project-title").textContent = project?.name ?? state.project;
     $("drop-target").textContent = project?.name ?? state.project;
     document.title = `${project?.name ?? state.project} – MDU Assets`;
+    // Counts come from the project, so they include images that are not loaded yet.
+    $("project-summary").textContent = !project || project.assetCount === 0 ? ""
+        : `${numberFormat.format(project.assetCount)} ${project.assetCount === 1 ? "image" : "images"} · ${formatSize(project.totalSize)}`;
     $("project-list").replaceChildren(...state.projects.map((p) =>
         element("li", {}, [element("a", {
             class: "project-link",
@@ -126,10 +151,8 @@ function sortedAssets() {
 
 function renderAssets() {
     const assets = sortedAssets();
-    const total = state.assets.reduce((sum, asset) => sum + asset.size, 0);
-    $("project-summary").textContent = state.assets.length === 0 ? ""
-        : `${numberFormat.format(state.assets.length)} ${state.assets.length === 1 ? "image" : "images"} · ${formatSize(total)}`;
     $("empty-state").hidden = assets.length > 0;
+    $("load-more").hidden = !state.next;
 
     const grid = state.view === "grid";
     $("asset-grid").hidden = !grid;
@@ -232,18 +255,23 @@ function createCard(title) {
     $("snippet-list").prepend(item);
     $("snippets").hidden = false;
 
-    const card = { item, asset: null };
+    const card = { item, asset: null, uploading: true };
+    item.card = card;
     card.progress = (percent) => {
         progress.value = percent;
         stateText.textContent = `Uploading ${percent} %`;
     };
     card.fail = (message) => {
+        card.uploading = false;
         progress.remove();
         stateText.textContent = message;
         stateText.classList.add("is-error");
     };
     card.fill = (asset) => {
         card.asset = asset;
+        card.uploading = false;
+        // A card cleared away while its upload ran stays gone.
+        if (!card.item.isConnected) return;
         state.cards.set(asset.id, card);
         progress.remove();
         stateText.textContent = `${formatDimensions(asset)} · ${formatSize(asset.size)}`;
@@ -253,7 +281,10 @@ function createCard(title) {
 
         const fileName = element("input", { type: "text", value: asset.fileName, spellcheck: "false", autocomplete: "off" });
         const altText = element("input", { type: "text", value: asset.altText, autocomplete: "off" });
-        const save = async () => {
+        // Enter saves, and leaving the field afterwards fires "change" too. Saves of a card run one after another,
+        // so the second one finds nothing changed and sends no request.
+        const save = () => (card.saving = (card.saving ?? Promise.resolve()).then(saveChanges));
+        const saveChanges = async () => {
             const changes = {};
             if (fileName.value.trim() !== card.asset.fileName) changes.fileName = fileName.value.trim();
             if (altText.value.trim() !== card.asset.altText) changes.altText = altText.value.trim();
@@ -335,19 +366,21 @@ function replaceAsset(asset) {
 }
 
 function updateCopyAll() {
-    $("copy-all").hidden = [...state.cards.values()].length < 2;
+    $("copy-all").hidden = state.cards.size < 2;
 }
 
 $("copy-all").addEventListener("click", async () => {
-    const cards = [...$("snippet-list").children].map((item) => [...state.cards.values()].find((c) => c.item === item)).filter(Boolean);
+    const cards = [...$("snippet-list").children].map((item) => item.card).filter((card) => card?.asset && state.cards.has(card.asset.id));
     const ok = await copyText(cards.map((card) => snippetText(card.asset)).join("\n"));
     announce(ok ? `Copied ${cards.length} snippets.` : "Copying failed.");
 });
 
+// Clear keeps cards whose upload is still running; their snippets appear when the upload finishes.
 $("clear-snippets").addEventListener("click", () => {
     state.cards.clear();
-    $("snippet-list").replaceChildren();
-    $("snippets").hidden = true;
+    for (const item of [...$("snippet-list").children]) if (!item.card?.uploading) item.remove();
+    $("snippets").hidden = $("snippet-list").children.length === 0;
+    updateCopyAll();
     $("upload-button").focus();
 });
 
@@ -399,7 +432,7 @@ async function uploadFiles(files, { pasted = false } = {}) {
 
     announce(`Uploading ${images.length} ${images.length === 1 ? "image" : "images"}…`);
     const results = (await Promise.all(images.map((file) =>
-        pasted || !file.name || file.name === "image.png"
+        pasted || !file.name
             ? upload(file, pastedName(file), "Screenshot")
             : upload(file, file.name)))).filter(Boolean);
 
@@ -411,8 +444,9 @@ async function uploadFiles(files, { pasted = false } = {}) {
     const copied = await copyText(results.map(snippetText).join("\n"));
     const names = results.length === 1 ? results[0].fileName : `${results.length} images`;
     announce(copied ? `Uploaded ${names}. The snippet is on the clipboard.` : `Uploaded ${names}. Press Copy to copy the snippet.`);
-    if (copied) for (const asset of results) flashCopied(state.cards.get(asset.id).copyButton, true);
-    state.cards.get(results[0].id).copyButton.focus({ preventScroll: true });
+    const buttons = results.map((asset) => state.cards.get(asset.id)?.copyButton).filter(Boolean);
+    if (copied) for (const button of buttons) flashCopied(button, true);
+    buttons[0]?.focus({ preventScroll: true });
     refreshProjectCounts();
 }
 
