@@ -30,7 +30,8 @@ public sealed record AssetResponse(
     }
 }
 
-public sealed record AssetList(IReadOnlyList<AssetResponse> Items);
+/// <summary>One page of assets; <c>Next</c> is set when another page follows.</summary>
+public sealed record AssetList(IReadOnlyList<AssetResponse> Items, string? Next);
 
 public sealed record ProjectResponse(string Slug, string Name, int AssetCount, long TotalSize);
 

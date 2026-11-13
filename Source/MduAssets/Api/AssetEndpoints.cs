@@ -24,11 +24,23 @@ public static class AssetEndpoints
     private static ProjectList Projects(AssetStore assets) =>
         new(assets.ListProjects().Select(p => new ProjectResponse(p.Slug, p.Name, p.AssetCount, p.TotalSize)).ToList());
 
-    private static Results<Ok<AssetList>, ProblemHttpResult> List(string project, AssetStore assets, ServerSettings settings)
+    public const int DefaultPageSize = 100;
+    public const int MaxPageSize = 500;
+
+    /// <summary>Lists a project's assets newest first, at most <c>limit</c> at a time; <c>next</c> is the <c>after</c> value of the following page.</summary>
+    private static Results<Ok<AssetList>, ProblemHttpResult> List(string project, int? limit, string? after, AssetStore assets, ServerSettings settings)
     {
         if (assets.FindProject(project) is not { } target)
             return UnknownProject(project);
-        return TypedResults.Ok(new AssetList(assets.List(target.Id).Select(a => AssetResponse.From(a, settings)).ToList()));
+        var size = limit ?? DefaultPageSize;
+        if (size is < 1 or > MaxPageSize)
+            return TypedResults.Problem($"The limit must be between 1 and {MaxPageSize}.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid limit");
+        if (after is not null && (!AssetId.IsValid(after) || !assets.Contains(target.Id, after)))
+            return TypedResults.Problem($"There is no asset '{after}' in this project to continue after.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid cursor");
+
+        var page = assets.List(target.Id, size, after);
+        var items = page.Take(size).Select(a => AssetResponse.From(a, settings)).ToList();
+        return TypedResults.Ok(new AssetList(items, page.Count > size ? items[^1].Id : null));
     }
 
     private static Results<Ok<AssetResponse>, ProblemHttpResult> Get(string id, AssetStore assets, ServerSettings settings) =>

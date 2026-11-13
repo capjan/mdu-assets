@@ -120,18 +120,37 @@ public sealed class AssetStore(Database database)
         return projects;
     }
 
-    /// <summary>The current versions of all assets of a project, newest first.</summary>
-    public IReadOnlyList<AssetFile> List(long projectId)
+    /// <summary>
+    /// One page of the current versions of a project's assets, newest first. <paramref name="after"/> is the id of the
+    /// last asset of the previous page; the result has one asset more than <paramref name="limit"/> when another page follows.
+    /// </summary>
+    public IReadOnlyList<AssetFile> List(long projectId, int limit, string? after = null)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = SelectCurrent + " WHERE a.project_id = $project ORDER BY a.created_at DESC, a.id;";
+        command.CommandText = SelectCurrent + " WHERE a.project_id = $project" +
+            (after is null ? "" : " AND (a.created_at, a.id) < (SELECT created_at, id FROM assets WHERE id = $after)") +
+            " ORDER BY a.created_at DESC, a.id DESC LIMIT $limit;";
         command.Parameters.AddWithValue("$project", projectId);
+        command.Parameters.AddWithValue("$limit", limit + 1);
+        if (after is not null)
+            command.Parameters.AddWithValue("$after", after);
         using var reader = command.ExecuteReader();
         var assets = new List<AssetFile>();
         while (reader.Read())
             assets.Add(ReadAsset(reader));
         return assets;
+    }
+
+    /// <summary>Whether an asset belongs to the project.</summary>
+    public bool Contains(long projectId, string id)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM assets WHERE id = $id AND project_id = $project;";
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$project", projectId);
+        return command.ExecuteScalar() is not null;
     }
 
     /// <summary>Finds the current version of an asset, or <c>null</c> for an unknown id.</summary>

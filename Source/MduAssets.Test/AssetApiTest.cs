@@ -113,6 +113,80 @@ public sealed class AssetApiTest : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await _server.Ui().GetAsync(path, TestContext.Current.CancellationToken)).StatusCode);
     }
 
+    [Fact]
+    public async Task ListsTheAssetsPageByPage()
+    {
+        var uploaded = new List<string>();
+        for (var i = 0; i < 5; i++)
+            uploaded.Add((await Upload($"image-{i}.png", width: (uint)(i + 1))).Id);
+        uploaded.Reverse();
+
+        var seen = new List<string>();
+        string? after = null;
+        var pages = 0;
+        do
+        {
+            var list = await _server.Ui().GetFromJsonAsync<AssetList>(
+                $"/api/v1/projects/default/assets?limit=2{(after is null ? "" : $"&after={after}")}", Json, TestContext.Current.CancellationToken);
+            seen.AddRange(list!.Items.Select(a => a.Id));
+            after = list.Next;
+            pages++;
+        } while (after is not null);
+
+        Assert.Equal(uploaded, seen);
+        Assert.Equal(3, pages);
+    }
+
+    [Theory]
+    [InlineData("?limit=0")]
+    [InlineData("?limit=501")]
+    [InlineData("?after=not-an-id")]
+    [InlineData("?after=AAAAAAAAAA")]
+    public async Task RejectsInvalidPaging(string query)
+    {
+        var response = await _server.Ui().GetAsync($"/api/v1/projects/default/assets{query}", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>Browsers send cached Basic Auth credentials along with requests from any site.</summary>
+    [Theory]
+    [InlineData("Sec-Fetch-Site", "cross-site")]
+    [InlineData("Sec-Fetch-Site", "same-site")]
+    [InlineData("Origin", "https://attacker.example")]
+    [InlineData("Origin", "http://img.test")]
+    [InlineData("Origin", "null")]
+    public async Task RejectsChangesFromOtherSites(string header, string value)
+    {
+        var asset = await Upload("target.png");
+        var client = _server.Ui();
+        client.DefaultRequestHeaders.Add(header, value);
+
+        var upload = new StringContent("<svg xmlns=\"http://www.w3.org/2000/svg\"/>", System.Text.Encoding.UTF8, "text/plain");
+        var uploadResponse = await client.PostAsync("/api/v1/projects/default/assets", upload, TestContext.Current.CancellationToken);
+        var patchResponse = await client.PatchAsJsonAsync($"/api/v1/assets/{asset.Id}", new AssetChanges("x.png", null), Json, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, uploadResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, patchResponse.StatusCode);
+        var list = await _server.Ui().GetFromJsonAsync<AssetList>("/api/v1/projects/default/assets", Json, TestContext.Current.CancellationToken);
+        Assert.Equal("target.png", Assert.Single(list!.Items).FileName);
+    }
+
+    [Theory]
+    [InlineData("Sec-Fetch-Site", "same-origin")]
+    [InlineData("Origin", "http://ui.test")]
+    public async Task AcceptsChangesFromTheWebInterface(string header, string value)
+    {
+        var client = _server.Ui();
+        client.DefaultRequestHeaders.Add(header, value);
+        var content = new ByteArrayContent(TestImages.Png(2, 2));
+        content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+
+        var response = await client.PostAsync("/api/v1/projects/default/assets", content, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
     [Theory]
     [InlineData("/api/v1/me")]
     [InlineData("/api/v1/projects")]
