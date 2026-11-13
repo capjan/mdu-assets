@@ -1,6 +1,11 @@
-# Spike: NetVips unter .NET Native AOT
+---
+navigation.order: 13
+description: Spike report (German) that verifies NetVips and libvips under .NET Native AOT on every target platform.
+---
 
-Stand: 13.11.2026 · Zu Risiko R-01 in [Requirements.md](../../Docs/Requirements.md#11-risiken)
+# NetVips AOT Spike
+
+Stand: 13.11.2026 · Zu Risiko R-01 in den [Anforderungen](../Requirements.md#11-risiken) · Code in [`Source/Spikes/NetVipsAot`](https://github.com/capjan/mdu-assets/tree/main/Source/Spikes/NetVipsAot)
 
 ## Frage
 
@@ -66,12 +71,12 @@ Die Testbilder entstehen im Programm (Verlauf + Rauschen + sRGB-Profil, JPEG mit
 ## Selbst ausführen
 
 ```sh
-cd Spikes/NetVipsAot
+cd Source/Spikes/NetVipsAot
 dotnet publish -c Release -r osx-arm64 -o out/osx-arm64
 out/osx-arm64/NetVipsAot
 ```
 
-Linux in der Architektur des Docker-Hosts (mit laufendem Docker, z. B. Colima):
+Linux in der Architektur des Docker-Hosts (mit laufendem Docker, z. B. Colima), ebenfalls im Ordner `Source/Spikes/NetVipsAot`:
 
 ```sh
 docker build -t netvips-aot-spike .

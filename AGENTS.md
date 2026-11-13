@@ -8,7 +8,10 @@ The MDU Asset Server is a self-hosted image server for MDU documentation: author
 
 - `Docs/Requirements.md` – requirements with IDs such as `LNK-01` (German).
 - `Docs/Architecture` – arc42 architecture documentation (English), rendered with MDU. Section 9 holds the architecture decision records in `Architecture-Decisions/`.
-- `Spikes/NetVipsAot` – spike that verifies NetVips/libvips under Native AOT; CI runs it on every target.
+- `Docs/Architecture/NetVips-AOT-Spike.md` – report of the spike that verifies NetVips/libvips under Native AOT.
+- `Source` – everything that compiles. `Source/Spikes/NetVipsAot` holds the spike code; CI runs it on every target.
+
+Keep this split: documentation only in `Docs` (plus the root README, AGENTS.md and LICENSE), code and build files only in `Source`. CI builds only when `Source/` or `.github/workflows/` changes, so build files such as a solution, `global.json` or `Directory.Build.props` belong in `Source/` too.
 - Work is planned in GitHub milestones M0–M11 with one issue per feature.
 
 ## Keep the architecture documentation current

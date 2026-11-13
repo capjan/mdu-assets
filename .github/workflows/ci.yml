@@ -51,11 +51,9 @@ jobs:
       run: dotnet tool install --global mdu
 
     - name: Lint Markdown
-      run: |
-        mdu lint Docs
-        mdu lint Spikes
+      run: mdu lint Docs
 
-  # Builds run only when these folders change.
+  # Builds run only when code (Source/) or the workflows change; documentation lives in Docs/.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -72,7 +70,6 @@ jobs:
         filters: |
           code:
             - 'Source/**'
-            - 'Spikes/**'
             - '.github/workflows/**'
 
   # Keeps the NetVips Native AOT spike green, so library updates that break AOT or AVIF show up early.
@@ -94,7 +91,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     defaults:
       run:
-        working-directory: Spikes/NetVipsAot
+        working-directory: Source/Spikes/NetVipsAot
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
@@ -102,7 +99,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v6
       with:
-        global-json-file: Spikes/NetVipsAot/global.json
+        global-json-file: Source/Spikes/NetVipsAot/global.json
 
     - name: Install Native AOT prerequisites
       if: runner.os == 'Linux'

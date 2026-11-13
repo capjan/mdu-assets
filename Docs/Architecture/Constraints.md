@@ -14,7 +14,7 @@ description: Technical, organizational and convention constraints of the MDU Ass
 | Web interface from embedded static files | HTML, CSS and plain JavaScript are embedded in the server. No CDNs, no external fonts. |
 | Target platforms linux-x64, linux-arm64, osx-arm64 | Windows is currently not a target. |
 | Image formats limited to the MDU image formats | png, jpg/jpeg, gif, webp, avif, bmp, svg. |
-| Native image library via NetVips/libvips | Verified under Native AOT in the [NetVips AOT spike](https://github.com/capjan/mdu-assets/blob/main/Spikes/NetVipsAot/README.md); libvips ships as a native library next to the program. |
+| Native image library via NetVips/libvips | Verified under Native AOT in the [NetVips AOT spike](NetVips-AOT-Spike.md); libvips ships as a native library next to the program. |
 
 ## Organizational constraints
 
