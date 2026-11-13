@@ -1,0 +1,15 @@
+# .NET build output
+bin/
+obj/
+out/
+*.dbg
+*.dSYM/
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# macOS metadata
+.DS_Store
+._*
