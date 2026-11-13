@@ -1,0 +1,7 @@
+**/bin
+**/obj
+**/out
+**/*.Test
+Spikes
+**/.DS_Store
+**/._*
