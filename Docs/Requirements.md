@@ -253,7 +253,7 @@ Seiten: Anmeldung (später), Projekte, Projekt (Baum + Raster/Liste + Upload-Fl�
 | --- | --- |
 | NF-01 | .NET 10, ASP.NET Core Minimal APIs mit Request Delegate Generator, `PublishAot=true`, ohne Trim- oder AOT-Warnungen. Keine Razor Pages, kein MVC, kein reflektionsbasiertes JSON (System.Text.Json Source Generator). |
 | NF-02 | Datenzugriff mit `Microsoft.Data.Sqlite` und handgeschriebenem SQL (kein EF Core), Schema-Migrationen versioniert im Code. SQLite im WAL-Modus. |
-| NF-03 | Bildverarbeitung mit NetVips/libvips (NetVips 3.2.0, NetVips.Native 8.18.7 oder neuer). Der [AOT-Spike](../Spikes/NetVipsAot/README.md) hat die Tauglichkeit unter Native AOT bestätigt (siehe R-01). |
+| NF-03 | Bildverarbeitung mit NetVips/libvips (NetVips 3.2.0, NetVips.Native 8.18.7 oder neuer). Der [AOT-Spike](https://github.com/capjan/mdu-assets/blob/main/Spikes/NetVipsAot/README.md) hat die Tauglichkeit unter Native AOT bestätigt (siehe R-01). |
 | NF-04 | Nur .NET als Build-, Test- und Generatorwerkzeug, kein Node/npm und kein Python – wie im MDU-Repository. Tests mit xUnit. |
 | NF-05 | Dateien werden unter einem inhaltsadressierten Pfad abgelegt (`blobs/ab/cd/<sha256>`), Metadaten verweisen darauf. Schreiben erfolgt atomar (temporäre Datei + Umbenennen). |
 | NF-06 | Backup: Ein Kopieren des Datenverzeichnisses nach `sqlite3 .backup` bzw. einem eingebauten Befehl `mdu-assets backup <ziel>` ergibt eine konsistente Sicherung. |
@@ -313,7 +313,7 @@ AuditEntry(id, at, user_id?, project_id?, action, target, details_json, ip)
 
 | ID | Risiko | Umgang |
 | --- | --- | --- |
-| R-01 | NetVips unter Native AOT und AVIF-Kodierung im mitgelieferten libvips. | **Durch [Spike](../Spikes/NetVipsAot/README.md) entschärft:** 0 AOT-Warnungen, alle Prüfungen bestanden auf osx-arm64 und Linux. Hinweis: Multi-Arch-Builds nicht unter Emulation, sondern nativ oder per Cross-Compile. |
+| R-01 | NetVips unter Native AOT und AVIF-Kodierung im mitgelieferten libvips. | **Durch [Spike](https://github.com/capjan/mdu-assets/blob/main/Spikes/NetVipsAot/README.md) entschärft:** 0 AOT-Warnungen, alle Prüfungen bestanden auf osx-arm64 und Linux. Hinweis: Multi-Arch-Builds nicht unter Emulation, sondern nativ oder per Cross-Compile. |
 | R-02 | Native Binaries sind wegen libvips keine Einzeldatei. | Bestätigt. Release als Archiv; Docker (chiselled `runtime-deps` reicht) als empfohlener Weg. |
 | R-07 | AVIF-Kodierung ist langsam (≈ 1 s für 1600×900) und speicherhungrig. | Hintergrund-Erzeugung und begrenzte Parallelität (DLV-04), libvips-Cache begrenzen. |
 | R-03 | Öffentliche Bilder mit nicht erratbaren IDs sind keine Zugriffskontrolle; einmal geteilte Links lassen sich nicht zurückholen. | In UI und Doku klar benennen; Löschen liefert sofort 410. |
@@ -330,4 +330,4 @@ AuditEntry(id, at, user_id?, project_id?, action, target, details_json, ip)
 | Q-03 | Soll MDU beim Rendern für Bilder vom Asset-Server `referrerpolicy="no-referrer-when-downgrade"` setzen, damit der Server einzelne Seiten statt nur Sites sieht? Das ist eine Datenschutzabwägung für Leser. |
 | Q-04 | Wie viele Versionen pro Asset sollen standardmäßig aufbewahrt werden (unbegrenzt vs. z. B. 20)? |
 | Q-05 | Sollen Asset-IDs bei einem Import in eine andere Instanz kollidieren dürfen (dann neue IDs und Mapping-Datei) oder schlägt der Import fehl? |
-| Q-06 | Welcher Hostname bzw. welche Domain ist für den produktiven Betrieb vorgesehen? |
+| Q-06 | ~~Welcher Hostname ist vorgesehen?~~ Geklärt: Die Hostnamen für Oberfläche und öffentliche Links sind Konfiguration pro Installation (LNK-04, NF-08), es gibt keinen festen Hostnamen. |
