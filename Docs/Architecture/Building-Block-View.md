@@ -6,7 +6,7 @@ description: Static structure of the MDU Asset Server, from the whole system dow
 # Building Block View
 
 > [!NOTE]
-> Planned structure. Names of projects and namespaces are fixed when milestone M0 creates the solution; this page then describes the code as it is.
+> Level 1 shows the target structure. Level 2 lists the projects that exist today and the ones planned for later milestones.
 
 ## Level 1: the server
 
@@ -58,14 +58,17 @@ Storage --> Files
 | Usage statistics | Counts requests in memory and writes them in batches; referrer and bot filtering | STA-01 – STA-06 |
 | Storage | SQLite access with migrations, content-addressed blob store, variant cache | NF-02, NF-05 |
 
-## Level 2: planned solution layout
+## Level 2: solution layout
 
-| Project | Contents |
-| --- | --- |
-| `Source/MduAssets` | Host: configuration, dependency injection, endpoint mapping, embedded UI files, command-line entry (`serve`, `backup`) |
-| `Source/MduAssets.Core` | Domain model and use cases: projects, assets, versions, folders, permissions; no ASP.NET Core dependency |
-| `Source/MduAssets.Storage` | SQLite repositories, migrations, blob store, variant cache |
-| `Source/MduAssets.Imaging` | NetVips wrapper, SVG sanitizer, variant rules |
-| `Source/*.Test` | xUnit tests per project, plus HTTP-level tests against the host |
+The solution is `Source/MduAssets.slnx`. Everything that compiles lives under `Source/`.
+
+| Project | Contents | Status |
+| --- | --- | --- |
+| `MduAssets` | Host, published as the `mdu-assets` program: configuration, logging, request log, health check, startup checks; later endpoints, embedded UI files and commands such as `backup` | Since M0 |
+| `MduAssets.Storage` | `DataDirectory` (folder layout), `Database` (SQLite connections in WAL mode), `MigrationRunner` with embedded `Migrations/NNNN_name.sql`, `BlobStore` (content-addressed files); later repositories and the variant cache | Since M0 |
+| `MduAssets.Core` | Domain model and use cases: projects, assets, versions, folders, permissions; no ASP.NET Core dependency | Planned (M1) |
+| `MduAssets.Imaging` | NetVips wrapper, SVG sanitizer, variant rules | Planned (M1, M5) |
+| `MduAssets.Test`, `MduAssets.Storage.Test` | xUnit v3 tests; HTTP-level tests against the host with a temporary data directory | Since M0 |
+| `Spikes/NetVipsAot` | [NetVips AOT spike](NetVips-AOT-Spike.md), kept running in CI | Since the spike |
 
 The split keeps NetVips and SQLite behind small interfaces, so the core can be tested without native libraries and a storage backend could be added later without touching the use cases.
