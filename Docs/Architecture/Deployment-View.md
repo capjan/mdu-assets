@@ -59,6 +59,7 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 ├── mdu-assets.db         # SQLite database (WAL mode): users, projects, assets, versions, statistics, audit log
 ├── blobs/ab/cd/<sha256>  # content of every version, written once
 ├── variants/…            # resized and converted variants, can be deleted at any time
+├── keys/                 # ASP.NET Core data protection keys, readable only by the server user
 └── tmp/                  # uploads in progress
 ```
 

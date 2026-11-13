@@ -38,4 +38,6 @@ Tracked as issues with the label [`decision`](https://github.com/capjan/mdu-asse
 | --- | --- | --- |
 | Basic Auth in the browser | No clean sign-out | Session login after 1.0 |
 | Own SVG sanitizer next to MDU's icon reader ([ADR-0012](Architecture-Decisions/0012-Own-SVG-Sanitizer.md)) | Icons and complete files need different cleaning | Apply fixes to the allowlist in both places; share a package if the rules start to drift |
+| Originals as previews | No thumbnails before image processing | Thumbnails in M5; the grid and list switch to them |
+| Data protection keys stored unencrypted | Nothing protects data with them yet | Encrypt them before session sign-in (AUTH-09) uses cookies |
 | Use cases in the endpoints | Too few for a separate core project in M1 | `MduAssets.Core` when roles and versions arrive (M3, M6) |
