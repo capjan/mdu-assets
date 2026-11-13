@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="MduAssets.Storage.Test/MduAssets.Storage.Test.csproj" />
+  <Project Path="MduAssets.Storage/MduAssets.Storage.csproj" />
+  <Project Path="MduAssets.Test/MduAssets.Test.csproj" />
+  <Project Path="MduAssets/MduAssets.csproj" />
+</Solution>

@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "mdu-assets": {
+      "commandName": "Project",
+      "applicationUrl": "http://127.0.0.1:5180",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

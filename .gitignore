@@ -13,3 +13,5 @@ out/
 # macOS metadata
 .DS_Store
 ._*
+data/
+TestResults/
