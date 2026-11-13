@@ -55,8 +55,9 @@ jobs:
         mdu lint Docs
         mdu lint Spikes
 
-  # Decides whether anything besides documentation changed. Jobs skipped through `if` count as passed
-  # for required checks, while a workflow-level `paths` filter would leave them pending forever.
+  # Builds run only when code changed: Source/, Spikes/ or the workflows, Markdown files excluded.
+  # A workflow-level `paths` filter would be shorter, but it leaves required checks pending and blocks
+  # the merge; jobs skipped through `if` count as passed.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -68,25 +69,16 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Check for changes outside the documentation
+    - name: Check for code changes
       id: diff
       env:
         BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       run: |
-        # Without a usable base (first push, force push), build everything.
-        if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-          echo "code=true" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-        # Documentation: Markdown anywhere, the Docs folder, and the license.
-        code_files=$(git diff --name-only "$BASE...$HEAD" | grep -Ev '(\.md$|^Docs/|^LICENSE$)' || true)
-        if [ -n "$code_files" ]; then
-          echo "Changes outside the documentation:"
-          printf '%s\n' "$code_files"
+        # If the base is unknown (first or forced push), the fallback path builds everything.
+        if { git diff --name-only "$BASE...$HEAD" || echo Source/; } | grep -v '\.md$' | grep -qE '^(Source|Spikes|\.github/workflows)/'; then
           echo "code=true" >> "$GITHUB_OUTPUT"
         else
-          echo "Only documentation changed; skipping builds."
           echo "code=false" >> "$GITHUB_OUTPUT"
         fi
 
