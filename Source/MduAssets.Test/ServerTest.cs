@@ -1,56 +1,43 @@
 using System.Net;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace MduAssets.Test;
 
 public sealed class ServerTest : IDisposable
 {
-    private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "mdu-assets-test-" + Guid.NewGuid().ToString("N"));
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly TestServer _server = new();
 
-    public ServerTest()
-    {
-        _factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder => builder.UseSetting("DataDirectory", _dataDirectory));
-    }
-
-    public void Dispose()
-    {
-        _factory.Dispose();
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        if (Directory.Exists(_dataDirectory))
-            Directory.Delete(_dataDirectory, recursive: true);
-    }
+    public void Dispose() => _server.Dispose();
 
     [Fact]
-    public async Task ReportsHealthy()
+    public async Task ReportsHealthyOnEveryHost()
     {
-        using var client = _factory.CreateClient();
+        foreach (var client in new[] { _server.Ui(user: null), _server.Public() })
+        {
+            var response = await client.GetAsync("/healthz", TestContext.Current.CancellationToken);
 
-        var response = await client.GetAsync("/healthz", TestContext.Current.CancellationToken);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("Healthy", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("Healthy", await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        }
     }
 
     [Fact]
     public void PreparesTheDataDirectoryOnStart()
     {
-        using var client = _factory.CreateClient();
+        using var client = _server.Ui();
 
-        Assert.True(File.Exists(Path.Combine(_dataDirectory, "mdu-assets.db")));
-        Assert.True(Directory.Exists(Path.Combine(_dataDirectory, "blobs")));
-        Assert.True(Directory.Exists(Path.Combine(_dataDirectory, "tmp")));
+        Assert.True(File.Exists(Path.Combine(_server.DataDirectory, "mdu-assets.db")));
+        Assert.True(Directory.Exists(Path.Combine(_server.DataDirectory, "blobs")));
+        Assert.True(Directory.Exists(Path.Combine(_server.DataDirectory, "tmp")));
     }
 
     [Fact]
     public async Task AnswersUnknownPathsWithNotFound()
     {
-        using var client = _factory.CreateClient();
+        using var client = _server.Ui();
 
         var response = await client.GetAsync("/nothing-here", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").Single());
     }
 }

@@ -2,9 +2,12 @@
   "profiles": {
     "mdu-assets": {
       "commandName": "Project",
-      "applicationUrl": "http://127.0.0.1:5180",
+      "applicationUrl": "http://127.0.0.1:5180;http://127.0.0.1:5181",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "MDU_ASSETS_ALLOWHTTP": "true",
+        "MDU_ASSETS_ADMIN_USER": "admin",
+        "MDU_ASSETS_ADMIN_PASSWORD": "development-only"
       }
     }
   }

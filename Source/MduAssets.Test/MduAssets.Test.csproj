@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MduAssets\MduAssets.csproj" />
+    <ProjectReference Include="..\MduAssets.Imaging.Test\MduAssets.Imaging.Test.csproj" />
   </ItemGroup>
 
 </Project>

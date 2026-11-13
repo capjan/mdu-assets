@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MduAssets.Storage\MduAssets.Storage.csproj" />
+    <ProjectReference Include="..\MduAssets.Imaging\MduAssets.Imaging.csproj" />
   </ItemGroup>
 
   <ItemGroup>
