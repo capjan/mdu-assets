@@ -63,7 +63,7 @@ public sealed class AssetApiTest : IDisposable
 
         var loaded = await _server.Ui().GetFromJsonAsync<AssetResponse>($"/api/v1/assets/{asset.Id}", Json, TestContext.Current.CancellationToken);
 
-        Assert.Equal(asset, loaded);
+        Assert.Equivalent(asset, loaded, strict: true);
     }
 
     [Fact]

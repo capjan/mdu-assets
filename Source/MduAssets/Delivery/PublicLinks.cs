@@ -14,7 +14,7 @@ public static class PublicLinks
 
     public static IResult Serve(string id, HttpContext context, AssetStore assets, BlobStore blobs, ServerSettings settings)
     {
-        if (!AssetId.IsValid(id) || assets.FindCurrent(id) is not { } asset)
+        if (!AssetId.IsValid(id) || assets.FindForDelivery(id) is not { } asset)
             return Results.NotFound();
 
         var headers = context.Response.Headers;

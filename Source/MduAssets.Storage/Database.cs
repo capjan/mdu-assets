@@ -32,6 +32,8 @@ public sealed class Database
         using var pragma = connection.CreateCommand();
         pragma.CommandText = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;";
         pragma.ExecuteNonQuery();
+        // SQLite's own lower() and NOCASE fold only A to Z; search compares text lower-cased by .NET instead.
+        connection.CreateFunction("unicode_lower", (string? value) => value?.ToLowerInvariant(), isDeterministic: true);
         return connection;
     }
 }
