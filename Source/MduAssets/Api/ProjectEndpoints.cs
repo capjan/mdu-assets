@@ -72,7 +72,8 @@ public static class ProjectEndpoints
         if (Validate(name, description) is { } invalid)
             return invalid;
 
-        projects.Update(target.Id, name.Trim(), description.Trim());
+        if (projects.Update(target.Id, name.Trim(), description.Trim()) is null)
+            return ProjectAccess.UnknownProject(project);
         return TypedResults.Ok(Summary(user, projects, target.Id));
     }
 
@@ -94,8 +95,7 @@ public static class ProjectEndpoints
     {
         if (!access.TryGet(user, project, ProjectRole.Viewer, out var target, out var problem))
             return problem;
-        return TypedResults.Ok(new MemberList(projects.Members(target.Id)
-            .Select(m => new MemberResponse(m.UserName, m.Role.ToText(), m.IsLocked)).ToList()));
+        return TypedResults.Ok(MemberListOf(projects, target.Id));
     }
 
     /// <summary>Adds a member or changes the role (PRJ-03). A project always keeps at least one owner.</summary>
@@ -118,7 +118,7 @@ public static class ProjectEndpoints
             return TypedResults.Problem(exception.Message, statusCode: StatusCodes.Status409Conflict, title: "Last owner");
         }
 
-        return Members(project, user, access, projects);
+        return TypedResults.Ok(MemberListOf(projects, target.Id));
     }
 
     private static Results<Ok<MemberList>, ProblemHttpResult> RemoveMember(
@@ -139,8 +139,11 @@ public static class ProjectEndpoints
             return TypedResults.Problem(exception.Message, statusCode: StatusCodes.Status409Conflict, title: "Last owner");
         }
 
-        return Members(project, user, access, projects);
+        return TypedResults.Ok(MemberListOf(projects, target.Id));
     }
+
+    private static MemberList MemberListOf(ProjectStore projects, long projectId) =>
+        new(projects.Members(projectId).Select(m => new MemberResponse(m.UserName, m.Role.ToText(), m.IsLocked)).ToList());
 
     private static ProjectResponse Summary(ClaimsPrincipal user, ProjectStore projects, long projectId) =>
         ProjectResponse.From(projects.List(user.Id(), all: true, projectId).Single(), user.IsAdmin());

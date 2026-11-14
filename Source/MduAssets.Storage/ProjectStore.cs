@@ -125,7 +125,8 @@ public sealed class ProjectStore(Database database)
     }
 
     /// <summary>Changes name and description. The slug and all asset links stay the same (PRJ-04).</summary>
-    public Project Update(long id, string name, string description)
+    /// <returns>The changed project, or <c>null</c> when it was deleted meanwhile.</returns>
+    public Project? Update(long id, string name, string description)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
@@ -134,8 +135,7 @@ public sealed class ProjectStore(Database database)
         command.Parameters.AddWithValue("$name", name);
         command.Parameters.AddWithValue("$description", description);
         using var reader = command.ExecuteReader();
-        reader.Read();
-        return new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3));
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)) : null;
     }
 
     /// <summary>Deletes a project without assets. Returns <c>false</c> when it still has assets.</summary>

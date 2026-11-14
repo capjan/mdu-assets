@@ -92,3 +92,24 @@ export function showFormError(form, message) {
 }
 
 export const clearFormError = (form) => showFormError(form, "");
+
+export async function copyText(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/** Shows on a copy button whether copying worked; the button's last child holds its label. */
+export function flashCopied(button, ok) {
+    button.classList.toggle("is-copied", ok);
+    button.classList.toggle("is-failed", !ok);
+    button.lastChild.textContent = ok ? "Copied" : "Copy failed";
+    clearTimeout(button.resetTimer);
+    button.resetTimer = setTimeout(() => {
+        button.classList.remove("is-copied", "is-failed");
+        button.lastChild.textContent = "Copy";
+    }, 1600);
+}

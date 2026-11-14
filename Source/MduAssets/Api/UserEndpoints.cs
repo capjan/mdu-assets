@@ -10,11 +10,12 @@ public static class UserEndpoints
 {
     public static void Map(RouteGroupBuilder api, RouteGroupBuilder admin)
     {
-        api.MapGet("/me", Me);
-        api.MapPost("/me/password", ChangePassword);
+        api.MapGet("/me", Me).AllowWithStartPassword();
+        api.MapPost("/me/password", ChangePassword).AllowWithStartPassword();
 
         admin.MapGet("/users", List);
         admin.MapPost("/users", Create);
+        admin.MapGet("/users/{name}", Get);
         admin.MapPatch("/users/{name}", Update);
         admin.MapPost("/users/{name}/password-reset", ResetPassword);
         admin.MapGet("/settings", Settings);
@@ -43,6 +44,9 @@ public static class UserEndpoints
     }
 
     private static UserList List(UserStore users) => new(users.List().Select(UserResponse.From).ToList());
+
+    private static Results<Ok<UserResponse>, ProblemHttpResult> Get(string name, UserStore users) =>
+        users.Find(name) is { } user ? TypedResults.Ok(UserResponse.From(user)) : ProjectEndpoints.UnknownUser(name);
 
     /// <summary>Creates a user with a start password that is shown once and must be changed at the first sign-in.</summary>
     private static Results<Created<StartPasswordResponse>, ProblemHttpResult> Create(NewUser request, UserStore users)
@@ -100,7 +104,7 @@ public static class UserEndpoints
     }
 
     private static OverviewResponse Overview(
-        ClaimsPrincipal user, UserStore users, ProjectStore projects, AssetStore assets, SettingsStore settings, ServerSettings server)
+        ClaimsPrincipal user, UserStore users, ProjectStore projects, AssetStore assets, SettingsStore settings, ServerSettings server, DataDirectory data)
     {
         var allUsers = users.List();
         var allProjects = projects.List(user.Id(), all: true)
@@ -115,6 +119,6 @@ public static class UserEndpoints
             allProjects,
             Settings(settings),
             new ServerInfo(server.UiBaseUrl.ToString(), server.PublicBaseUrl.ToString(), server.Options.MaxUploadBytes,
-                server.Options.MaxPixels, server.Options.DataDirectory));
+                server.Options.MaxPixels, data.Root));
     }
 }

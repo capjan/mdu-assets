@@ -1,7 +1,7 @@
 // MDU Asset Server web interface. Plain JavaScript on the JSON API, no build step (ADR-0007).
 // This module runs the project page and picks the page to show; the other pages live in pages.js.
 import {
-    $, api, announce, element, formatSize, numberFormat, dateFormat, plural, readSetting, request, writeSetting,
+    $, api, announce, copyText, element, flashCopied, formatSize, numberFormat, dateFormat, plural, readSetting, request, writeSetting,
 } from "./common.js";
 import { showAccount, showAdmin, showNewProject, showSettings } from "./pages.js";
 
@@ -248,26 +248,6 @@ function snippetText(asset) {
     return (formats[state.format] ?? formats.markdown).text(asset);
 }
 
-async function copyText(text) {
-    try {
-        await navigator.clipboard.writeText(text);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-function flashCopied(button, ok) {
-    button.classList.toggle("is-copied", ok);
-    button.classList.toggle("is-failed", !ok);
-    button.lastChild.textContent = ok ? "Copied" : "Copy failed";
-    clearTimeout(button.resetTimer);
-    button.resetTimer = setTimeout(() => {
-        button.classList.remove("is-copied", "is-failed");
-        button.lastChild.textContent = "Copy";
-    }, 1600);
-}
-
 const copyIcon = () => {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 20 20");
@@ -458,7 +438,12 @@ function upload(file, name, alt) {
 
 async function uploadFiles(files, { pasted = false } = {}) {
     // Only on the images page, and only for editors and owners; the server checks the role again.
-    if ($("page-project").hidden || !canEdit()) return;
+    if ($("page-project").hidden) return;
+    if (!canEdit()) {
+        announce("Uploading needs the editor role in this project. Ask an owner for it.");
+        $("viewer-notice").scrollIntoView({ block: "nearest" });
+        return;
+    }
     const images = [...files].filter((file) => accepted.test(file.type) || /\.svg$/i.test(file.name));
     const skipped = files.length - images.length;
     if (images.length === 0) {

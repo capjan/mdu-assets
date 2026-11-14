@@ -14,6 +14,8 @@ namespace MduAssets.Test;
 public sealed class CollaborationTest : IDisposable
 {
     private const string Password = "a-long-password";
+    // One PBKDF2 hash for all test users; hashing per user and test would add seconds to every run.
+    private static readonly string PasswordHash = PasswordHasher.Hash(Password);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
@@ -25,8 +27,8 @@ public sealed class CollaborationTest : IDisposable
         var projects = _server.Services.GetRequiredService<ProjectStore>();
         var docs = projects.Find("default")!.Id;
         foreach (var (name, role) in new[] { ("vera", ProjectRole.Viewer), ("ed", ProjectRole.Editor), ("olga", ProjectRole.Owner) })
-            projects.SetRole(docs, users.Create(name, PasswordHasher.Hash(Password), isAdmin: false).Id, role);
-        users.Create("stranger", PasswordHasher.Hash(Password), isAdmin: false);
+            projects.SetRole(docs, users.Create(name, PasswordHash, isAdmin: false).Id, role);
+        users.Create("stranger", PasswordHash, isAdmin: false);
     }
 
     public void Dispose() => _server.Dispose();

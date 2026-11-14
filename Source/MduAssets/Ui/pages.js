@@ -1,21 +1,11 @@
 // Project settings, new project, account and admin pages.
 import {
-    $, announce, clearFormError, dateFormat, element, formatSize, handleSubmit, numberFormat, plural, request, send, shortDateFormat,
+    $, announce, clearFormError, copyText, dateFormat, element, flashCopied, formatSize, handleSubmit, numberFormat, plural, request, send,
+    shortDateFormat, showFormError,
 } from "./common.js";
 
 const roles = [["viewer", "Viewer"], ["editor", "Editor"], ["owner", "Owner"]];
 const projectPath = (project) => `/projects/${encodeURIComponent(project.slug)}`;
-
-async function copyToClipboard(text, button) {
-    let ok = false;
-    try {
-        await navigator.clipboard.writeText(text);
-        ok = true;
-    } catch { }
-    button.lastChild.textContent = ok ? "Copied" : "Copy failed";
-    setTimeout(() => { button.lastChild.textContent = "Copy"; }, 1600);
-    announce(ok ? "Copied to the clipboard." : "Copying failed. Select the text and copy it.");
-}
 
 // Project settings: name, description, members and deletion (owners and admins).
 export async function showSettings(project, me) {
@@ -204,8 +194,11 @@ export async function showAdmin(me) {
         $("start-password").hidden = false;
         $("start-password").focus();
     };
-    $("start-password-copy").addEventListener("click", (event) =>
-        copyToClipboard($("start-password-value").textContent, event.currentTarget));
+    $("start-password-copy").addEventListener("click", async () => {
+        const ok = await copyText($("start-password-value").textContent);
+        flashCopied($("start-password-copy"), ok);
+        announce(ok ? "Copied to the clipboard." : "Copying failed. Select the text and copy it.");
+    });
 
     const renderUsers = (users) => {
         $("user-rows").replaceChildren(...users.map((user) => {
@@ -223,7 +216,7 @@ export async function showAdmin(me) {
                     announce(message);
                 } catch (error) {
                     announce(error.message);
-                    alertNearUsers(error.message);
+                    showFormError($("user-form"), error.message);
                 }
             };
             const adminButton = element("button", {
@@ -250,7 +243,8 @@ export async function showAdmin(me) {
                     announce(error.message);
                 }
             });
-            const actions = isMe ? [adminButton] : [adminButton, lockButton, resetButton];
+            // Admins do not demote, lock or reset themselves here: the page would lose its own access. Another admin can.
+            const actions = isMe ? [] : [adminButton, lockButton, resetButton];
             return element("tr", {}, [
                 name,
                 element("td", { text: status.join(", ") }),
@@ -258,11 +252,6 @@ export async function showAdmin(me) {
                 element("td", {}, [element("div", { class: "row-actions" }, actions)]),
             ]);
         }));
-    };
-    const alertNearUsers = (message) => {
-        const form = $("user-form");
-        form.querySelector(".form-error")?.remove();
-        form.append(element("p", { class: "form-error", role: "alert", text: message }));
     };
     renderUsers((await request("/users")).items);
 

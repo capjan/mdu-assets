@@ -20,6 +20,7 @@ public sealed class UserManagementTest : IDisposable
     {
         var response = await _server.Ui().PostAsJsonAsync("/api/v1/users", new NewUser(name, isAdmin), Json, Cancel);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _server.Ui().GetAsync(response.Headers.Location, Cancel)).StatusCode);
         return (await response.Content.ReadFromJsonAsync<StartPasswordResponse>(Json, Cancel))!;
     }
 
@@ -155,6 +156,7 @@ public sealed class UserManagementTest : IDisposable
 
         Assert.Equal((2, 1, 0, 2, 0, 0L), (overview!.Users, overview.Admins, overview.LockedUsers, overview.Projects, overview.Assets, overview.StorageUsed));
         Assert.Equal("http://img.test/", overview.Server.PublicBaseUrl);
+        Assert.True(Path.IsPathFullyQualified(overview.Server.DataDirectory));
         Assert.False(overview.Settings.UsersCanCreateProjects);
     }
 }
