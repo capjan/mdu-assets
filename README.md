@@ -2,7 +2,7 @@
 
 A self-hosted image server for [MDU](https://github.com/capjan/mdu) documentation. Drop or paste an image, get a stable link, and paste the ready-made Markdown into your docs.
 
-> **Status:** Milestone M2. A web interface in the MDU style uploads images by drag and drop, paste or file picker and hands out Markdown snippets; images are served under stable public links. See the [deployment guide](Docs/Deployment.md) to run it. Progress is tracked in the [milestones](https://github.com/capjan/mdu-assets/milestones).
+> **Status:** Milestone M3. A web interface in the MDU style uploads images by drag and drop, paste or file picker and hands out Markdown snippets; images are served under stable public links. Several users work together in projects as viewers, editors and owners, and admins manage users and settings. See the [deployment guide](Docs/Deployment.md) to run it. Progress is tracked in the [milestones](https://github.com/capjan/mdu-assets/milestones).
 
 ## Why
 

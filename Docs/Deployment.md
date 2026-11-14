@@ -125,6 +125,16 @@ The first answers `Healthy`, the second `404`. Then open `https://assets.example
 
 After the first start, remove the password from `.env`; the account lives in the database now.
 
+## Users and projects
+
+Admins manage everything in the **Admin** area of the web interface:
+
+- **Users:** create a user and hand over the start password that appears once. The user chooses an own password at the first sign-in; until then nothing else works. Lock a user to stop access at once, reset a password to issue a new start password, or make another user an admin. The last unlocked admin cannot lose the role or be locked.
+- **Projects:** admins create projects with **New project** in the sidebar. To let every user create projects, turn on **All users may create projects** in the settings ([ADR-0014](Architecture/Architecture-Decisions/0014-Project-Creation-by-Admin-Setting.md)). Whoever creates a project becomes its owner.
+- **Members:** owners add members in **Project settings** as viewer (look and copy), editor (also upload and change) or owner (also manage members, rename or delete the project). Admins have owner rights in every project without being members.
+
+The short name of a project appears in API paths and never changes; renaming a project changes only its display name, and image links stay the same. Only empty projects can be deleted until the trash arrives.
+
 ## Upload from the command line
 
 ```bash
