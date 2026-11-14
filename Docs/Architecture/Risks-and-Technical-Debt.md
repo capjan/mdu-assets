@@ -26,7 +26,7 @@ Tracked as issues with the label [`decision`](https://github.com/capjan/mdu-asse
 
 | ID | Question | Needed by |
 | --- | --- | --- |
-| Q-01 | May regular users create projects? | M3 |
+| Q-01 | May regular users create projects? Answered by [ADR-0014](Architecture-Decisions/0014-Project-Creation-by-Admin-Setting.md): only with an admin setting, off by default | M3 |
 | Q-02 | Is a CDN purge hook needed when an image is replaced? | M6 |
 | Q-03 | Should MDU set a referrer policy for asset images? | M7 |
 | Q-04 | How many versions are kept by default? | M6 |
@@ -36,8 +36,9 @@ Tracked as issues with the label [`decision`](https://github.com/capjan/mdu-asse
 
 | Debt | Reason | Payback |
 | --- | --- | --- |
-| Basic Auth in the browser | No clean sign-out | Session login after 1.0 |
+| Basic Auth in the browser | No clean sign-out; after a password change the browser asks for the new password | Session login after 1.0 |
 | Own SVG sanitizer next to MDU's icon reader ([ADR-0012](Architecture-Decisions/0012-Own-SVG-Sanitizer.md)) | Icons and complete files need different cleaning | Apply fixes to the allowlist in both places; share a package if the rules start to drift |
 | Originals as previews | No thumbnails before image processing | Thumbnails in M5; the grid and list switch to them |
 | Data protection keys stored unencrypted | Nothing protects data with them yet | Encrypt them before session sign-in (AUTH-09) uses cookies |
-| Use cases in the endpoints | Too few for a separate core project in M1 | `MduAssets.Core` when roles and versions arrive (M3, M6) |
+| Use cases in the endpoints | Too few for a separate core project; role checks are already in one place (`ProjectAccess`) | `MduAssets.Core` when versions arrive (M6) |
+| Only empty projects can be deleted | Deleting images needs the trash, so they stay recoverable (PRJ-05) | Delete with confirmation once the trash exists (M6, [#36](https://github.com/capjan/mdu-assets/issues/36)) |

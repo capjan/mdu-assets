@@ -81,26 +81,29 @@ public sealed class StartupTest
     {
         using var database = new TemporaryDatabase();
         var users = new UserStore(database.Database);
+        var projects = new ProjectStore(database.Database);
 
-        Assert.Equal("admin", FirstAdmin.EnsureExists(users, "admin", "a-long-password"));
-        Assert.Null(FirstAdmin.EnsureExists(users, "someone-else", "another-long-password"));
+        Assert.Equal("admin", FirstAdmin.EnsureExists(users, projects, "admin", "a-long-password"));
+        Assert.Null(FirstAdmin.EnsureExists(users, projects, "someone-else", "another-long-password"));
 
         var admin = users.Find("ADMIN");
         Assert.NotNull(admin);
         Assert.True(admin.IsAdmin);
         Assert.True(PasswordHasher.Verify("a-long-password", admin.PasswordHash));
         Assert.Equal(1, users.Count());
+        Assert.Equal(ProjectRole.Owner, projects.RoleOf(projects.Find("default")!.Id, admin.Id));
     }
 
     [Theory]
     [InlineData(null, "a-long-password")]
     [InlineData("admin", null)]
     [InlineData("admin", "short")]
+    [InlineData("ad min", "a-long-password")]
     public void ExplainsAMissingOrWeakFirstAdmin(string? name, string? password)
     {
         using var database = new TemporaryDatabase();
 
-        var error = Assert.Throws<StartupException>(() => FirstAdmin.EnsureExists(new UserStore(database.Database), name, password));
+        var error = Assert.Throws<StartupException>(() => FirstAdmin.EnsureExists(new UserStore(database.Database), new ProjectStore(database.Database), name, password));
 
         Assert.Contains("MDU_ASSETS_ADMIN_", error.Message);
     }

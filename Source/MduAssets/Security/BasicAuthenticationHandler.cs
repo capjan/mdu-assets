@@ -60,6 +60,8 @@ public sealed class BasicAuthenticationHandler(
         };
         if (user.IsAdmin)
             claims.Add(new Claim(ClaimTypes.Role, AdminRole));
+        if (user.MustChangePassword)
+            claims.Add(new Claim(Caller.MustChangePasswordClaim, "true"));
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName)));

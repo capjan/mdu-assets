@@ -42,7 +42,7 @@ try
     dataDirectory.Prepare();
     database = new Database(dataDirectory);
     MigrationRunner.Apply(database, Migration.Embedded());
-    createdAdmin = FirstAdmin.EnsureExists(new UserStore(database), builder.Configuration["ADMIN_USER"], builder.Configuration["ADMIN_PASSWORD"]);
+    createdAdmin = FirstAdmin.EnsureExists(new UserStore(database), new ProjectStore(database), builder.Configuration["ADMIN_USER"], builder.Configuration["ADMIN_PASSWORD"]);
 }
 catch (StartupException exception)
 {
@@ -56,6 +56,9 @@ builder.Services.AddSingleton(database);
 builder.Services.AddSingleton<BlobStore>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<AssetStore>();
+builder.Services.AddSingleton<ProjectStore>();
+builder.Services.AddSingleton<SettingsStore>();
+builder.Services.AddSingleton<ProjectAccess>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<CredentialCache>();
 builder.Services.AddSingleton<UiFiles>();
@@ -81,6 +84,7 @@ app.Use((context, next) =>
 });
 app.UseCrossSiteRequestProtection(settings);
 app.UseAuthentication();
+app.UsePasswordChangeGate();
 app.UseAuthorization();
 
 app.MapHealthChecks("/healthz");
@@ -89,9 +93,12 @@ app.MapHealthChecks("/healthz");
 app.MapMethods("/i/{id}", ["GET", "HEAD"], PublicLinks.Serve).RequireHost(settings.PublicHost);
 app.MapMethods("/i/{id}/{**name}", ["GET", "HEAD"], PublicLinks.Serve).RequireHost(settings.PublicHost);
 
-// API: only on the UI host, signed in.
+// API: only on the UI host, signed in. Project rights are checked per request by ProjectAccess; user management needs the admin role.
 var api = app.MapGroup("/api/v1").RequireHost(settings.UiHost).RequireAuthorization();
+var admin = api.MapGroup("").RequireAuthorization(policy => policy.RequireRole(BasicAuthenticationHandler.AdminRole));
 AssetEndpoints.Map(api);
+ProjectEndpoints.Map(api);
+UserEndpoints.Map(api, admin);
 
 // Web interface: only on the UI host, signed in, so the browser asks for the password on the first visit.
 var ui = app.MapGroup("").RequireHost(settings.UiHost).RequireAuthorization();

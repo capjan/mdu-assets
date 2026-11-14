@@ -1,11 +1,15 @@
 // MDU Asset Server web interface. Plain JavaScript on the JSON API, no build step (ADR-0007).
+// This module runs the project page and picks the page to show; the other pages live in pages.js.
+import {
+    $, api, announce, copyText, element, flashCopied, formatSize, numberFormat, dateFormat, plural, readSetting, request, writeSetting,
+} from "./common.js";
+import { showAccount, showAdmin, showNewProject, showSettings } from "./pages.js";
 
-// Absolute URLs from the origin: a page opened as https://user:password@host/ would otherwise make every
-// relative request carry the credentials, which fetch() refuses.
-const api = `${location.origin}/api/v1`;
 const params = new URLSearchParams(location.search);
 const state = {
-    project: params.get("project") || "default",
+    me: null,
+    page: params.get("page") || "project",
+    project: params.get("project"),
     projects: [],
     assets: [],
     next: null,
@@ -15,51 +19,10 @@ const state = {
     cards: new Map(),
 };
 
-const $ = (id) => document.getElementById(id);
-const status = $("status");
-
-function readSetting(key, fallback) {
-    try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
-}
-
-function writeSetting(key, value) {
-    try { localStorage.setItem(key, value); } catch { }
-}
-
-function announce(message) {
-    status.textContent = "";
-    requestAnimationFrame(() => { status.textContent = message; });
-}
-
-function element(tag, properties = {}, children = []) {
-    const node = document.createElement(tag);
-    for (const [key, value] of Object.entries(properties)) {
-        if (key === "class") node.className = value;
-        else if (key === "text") node.textContent = value;
-        else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
-        else if (value !== undefined && value !== null && value !== false) node.setAttribute(key, value === true ? "" : value);
-    }
-    node.append(...children);
-    return node;
-}
-
-const numberFormat = new Intl.NumberFormat("en");
-const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
-
-function formatSize(bytes) {
-    if (bytes < 1024) return `${numberFormat.format(bytes)} B`;
-    if (bytes < 1024 * 1024) return `${numberFormat.format(Math.round(bytes / 102.4) / 10)} KB`;
-    return `${numberFormat.format(Math.round(bytes / 104857.6) / 10)} MB`;
-}
-
 const formatDimensions = (asset) => asset.width && asset.height ? `${asset.width} × ${asset.height}` : "–";
 
-async function request(path, options = {}) {
-    const response = await fetch(api + path, { headers: { Accept: "application/json", ...options.headers }, ...options });
-    const body = response.headers.get("Content-Type")?.includes("json") ? await response.json() : null;
-    if (!response.ok) throw new Error(body?.detail || body?.title || `${response.status} ${response.statusText}`);
-    return body;
-}
+/** Editors and owners change images; viewers only look and copy. */
+const canEdit = () => ["editor", "owner"].includes(currentProject()?.role);
 
 // Theme switch, cycling auto → light → dark like MDU.
 const themes = ["auto", "light", "dark"];
@@ -82,14 +45,71 @@ themeToggle.addEventListener("click", () => {
 });
 updateThemeLabel();
 
-// Projects and assets
+// Pages: ?project=<slug> shows images, &page=settings its settings; ?page=new-project, account or admin.
+function showPage(name) {
+    for (const page of document.querySelectorAll("[id^=page-]")) page.hidden = page.id !== `page-${name}`;
+    $("account-link").setAttribute("aria-current", name === "account" ? "page" : "false");
+    $("admin-link").setAttribute("aria-current", name === "admin" ? "page" : "false");
+}
+
 async function load() {
-    const [me, projects] = await Promise.all([request("/me"), request("/projects")]);
+    const me = await request("/me");
+    state.me = me;
     $("user-name").textContent = me.name;
-    state.projects = projects.items;
-    const project = state.projects.find((p) => p.slug === state.project) ?? state.projects[0];
+    $("admin-link").hidden = !me.isAdmin;
+    $("new-project-link").hidden = !me.canCreateProjects;
+
+    // A start password blocks everything else until it is changed (AUTH-05).
+    if (me.mustChangePassword) {
+        showPage("account");
+        showAccount(me, { forced: true });
+        return;
+    }
+
+    state.projects = (await request("/projects")).items;
+    const project = state.projects.find((p) => p.slug === state.project) ?? (state.project ? null : state.projects[0]);
     state.project = project?.slug ?? state.project;
     renderProjects();
+
+    switch (state.page) {
+        case "account":
+            showPage("account");
+            showAccount(me);
+            return;
+        case "admin":
+            if (me.isAdmin) {
+                showPage("admin");
+                await showAdmin(me);
+                return;
+            }
+            break;
+        case "new-project":
+            if (me.canCreateProjects) {
+                showPage("new-project");
+                showNewProject();
+                return;
+            }
+            break;
+        case "settings":
+            if (project?.role === "owner") {
+                showPage("settings");
+                await showSettings(project, me);
+                return;
+            }
+            break;
+    }
+
+    showPage("project");
+    if (!project) {
+        $("project-title").textContent = state.project ? "Project not found" : "No projects yet";
+        document.title = "MDU Assets";
+        $("project-toolbar").hidden = true;
+        $("empty-state").hidden = false;
+        $("empty-state").textContent = state.project
+            ? `There is no project '${state.project}', or you are not a member of it.`
+            : me.canCreateProjects ? "Create a project to start uploading images." : "Ask an admin or a project owner to add you to a project.";
+        return;
+    }
     await loadAssets();
 }
 
@@ -126,18 +146,31 @@ function currentProject() {
 
 function renderProjects() {
     const project = currentProject();
-    $("project-title").textContent = project?.name ?? state.project;
-    $("drop-target").textContent = project?.name ?? state.project;
-    document.title = `${project?.name ?? state.project} – MDU Assets`;
+    const name = project?.name ?? state.project ?? "";
+    $("project-title").textContent = name;
+    $("drop-target").textContent = name;
+    document.title = name ? `${name} – MDU Assets` : "MDU Assets";
     // Counts come from the project, so they include images that are not loaded yet.
     $("project-summary").textContent = !project || project.assetCount === 0 ? ""
-        : `${numberFormat.format(project.assetCount)} ${project.assetCount === 1 ? "image" : "images"} · ${formatSize(project.totalSize)}`;
+        : `${plural(project.assetCount, "image", "images")} · ${formatSize(project.totalSize)}`;
+    $("project-description").textContent = project?.description ?? "";
+    $("project-description").hidden = !project?.description;
+
+    const editable = canEdit();
+    $("upload-button").hidden = !editable;
+    $("toolbar-hint").hidden = !editable;
+    $("viewer-notice").hidden = !project || editable;
+    $("empty-state").textContent = editable ? "No images yet. Drop, paste or upload one." : "No images yet.";
+    const settings = $("settings-link");
+    settings.hidden = project?.role !== "owner";
+    settings.href = project ? `/?project=${encodeURIComponent(project.slug)}&page=settings` : "#";
+
     $("project-list").replaceChildren(...state.projects.map((p) =>
         element("li", {}, [element("a", {
             class: "project-link",
             href: `/?project=${encodeURIComponent(p.slug)}`,
-            "aria-label": `${p.name}, ${numberFormat.format(p.assetCount)} ${p.assetCount === 1 ? "image" : "images"}`,
-            "aria-current": p.slug === state.project ? "page" : null,
+            "aria-label": `${p.name}, ${plural(p.assetCount, "image", "images")}`,
+            "aria-current": p.slug === state.project && ["project", "settings"].includes(state.page) ? "page" : null,
         }, [element("span", { text: p.name }), element("span", { class: "project-count", text: numberFormat.format(p.assetCount) })])])));
 }
 
@@ -215,26 +248,6 @@ function snippetText(asset) {
     return (formats[state.format] ?? formats.markdown).text(asset);
 }
 
-async function copyText(text) {
-    try {
-        await navigator.clipboard.writeText(text);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-function flashCopied(button, ok) {
-    button.classList.toggle("is-copied", ok);
-    button.classList.toggle("is-failed", !ok);
-    button.lastChild.textContent = ok ? "Copied" : "Copy failed";
-    clearTimeout(button.resetTimer);
-    button.resetTimer = setTimeout(() => {
-        button.classList.remove("is-copied", "is-failed");
-        button.lastChild.textContent = "Copy";
-    }, 1600);
-}
-
 const copyIcon = () => {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 20 20");
@@ -279,8 +292,9 @@ function createCard(title) {
         name.textContent = asset.fileName;
         preview.replaceChildren(element("img", { src: asset.url, alt: "" }));
 
-        const fileName = element("input", { type: "text", value: asset.fileName, spellcheck: "false", autocomplete: "off" });
-        const altText = element("input", { type: "text", value: asset.altText, autocomplete: "off" });
+        const readOnly = !canEdit();
+        const fileName = element("input", { type: "text", value: asset.fileName, spellcheck: "false", autocomplete: "off", readonly: readOnly });
+        const altText = element("input", { type: "text", value: asset.altText, autocomplete: "off", readonly: readOnly });
         // Enter saves, and leaving the field afterwards fires "change" too. Saves of a card run one after another,
         // so the second one finds nothing changed and sends no request.
         const save = () => (card.saving = (card.saving ?? Promise.resolve()).then(saveChanges));
@@ -307,7 +321,7 @@ function createCard(title) {
                 announce(error.message);
             }
         };
-        for (const input of [fileName, altText]) {
+        for (const input of readOnly ? [] : [fileName, altText]) {
             input.addEventListener("change", save);
             input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); save(); } });
         }
@@ -423,6 +437,13 @@ function upload(file, name, alt) {
 }
 
 async function uploadFiles(files, { pasted = false } = {}) {
+    // Only on the images page, and only for editors and owners; the server checks the role again.
+    if ($("page-project").hidden) return;
+    if (!canEdit()) {
+        announce("Uploading needs the editor role in this project. Ask an owner for it.");
+        $("viewer-notice").scrollIntoView({ block: "nearest" });
+        return;
+    }
     const images = [...files].filter((file) => accepted.test(file.type) || /\.svg$/i.test(file.name));
     const skipped = files.length - images.length;
     if (images.length === 0) {
@@ -477,7 +498,7 @@ let dragDepth = 0;
 const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
 
 document.addEventListener("dragenter", (event) => {
-    if (!hasFiles(event)) return;
+    if (!hasFiles(event) || $("page-project").hidden || !canEdit()) return;
     event.preventDefault();
     dragDepth++;
     dropZone.hidden = false;
@@ -501,6 +522,8 @@ document.addEventListener("drop", (event) => {
 });
 
 load().catch((error) => {
+    showPage("project");
+    $("project-toolbar").hidden = true;
     $("empty-state").hidden = false;
-    $("empty-state").textContent = `Could not load the images: ${error.message}`;
+    $("empty-state").textContent = `Could not load the page: ${error.message}`;
 });

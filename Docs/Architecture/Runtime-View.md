@@ -34,6 +34,30 @@ The upload answers as soon as the original, its metadata and the thumbnail are s
 > [!NOTE]
 > Since M2 the sequence runs as shown up to the snippet, except the image pipeline steps: the original is stored as uploaded and the interface previews it through its public link. Metadata stripping, thumbnails and AVIF follow in M5.
 
+## First sign-in with a start password
+
+```mermaid
+sequenceDiagram
+    accTitle: First sign-in with a start password
+    actor Admin
+    actor User
+    participant UI as Web interface
+    participant API
+    Admin->>API: POST /api/v1/users {name}
+    API-->>Admin: 201 start password (shown once)
+    Admin-->>User: Hands over the start password
+    User->>UI: Opens the web interface, signs in
+    UI->>API: GET /api/v1/me
+    API-->>UI: mustChangePassword: true
+    UI-->>User: Account page only
+    User->>UI: Current and new password
+    UI->>API: POST /api/v1/me/password
+    API-->>UI: 204
+    UI-->>User: Browser asks for the new password on the next request
+```
+
+Until the password is changed, every other API request answers 403, so a tool cannot work around the account page.
+
 ## Serve a public link
 
 ```mermaid

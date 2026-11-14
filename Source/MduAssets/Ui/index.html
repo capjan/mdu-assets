@@ -17,7 +17,10 @@
         <span>MDU Assets</span>
     </a>
     <div class="site-header-actions">
-        <span class="user-name" id="user-name"></span>
+        <nav class="header-nav" aria-label="Account">
+            <a class="header-link" id="admin-link" href="/?page=admin" hidden>Admin</a>
+            <a class="header-link" id="account-link" href="/?page=account"><span class="visually-hidden">Account of </span><span id="user-name"></span></a>
+        </nav>
         <button class="icon-button theme-toggle" id="theme-toggle" type="button">
             <svg class="theme-icon-auto" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                 <path d="M10 1.5a8.5 8.5 0 0 1 0 17z"></path>
@@ -37,19 +40,29 @@
     <nav class="sidebar" aria-label="Projects">
         <p class="sidebar-label" id="projects-label">Projects</p>
         <ul class="project-list" id="project-list" aria-labelledby="projects-label"></ul>
+        <a class="new-project-link" id="new-project-link" href="/?page=new-project" hidden>
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4.5v11M4.5 10h11"></path></svg>
+            New project
+        </a>
     </nav>
     <main class="main" id="main" tabindex="-1">
-        <h1 id="project-title">Images</h1>
+    <div id="page-project" hidden>
+        <div class="page-heading">
+            <h1 id="project-title">Images</h1>
+            <a class="secondary-button" id="settings-link" href="#" hidden>Project settings</a>
+        </div>
         <p class="project-summary" id="project-summary"></p>
+        <p class="project-description" id="project-description" hidden></p>
+        <p class="notice" id="viewer-notice" hidden>You can view and copy snippets in this project. Ask an owner for the editor role to upload or change images.</p>
 
-        <div class="toolbar">
+        <div class="toolbar" id="project-toolbar">
             <button class="primary-button" id="upload-button" type="button">
                 <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 13.5V3.5M5.5 8 10 3.5 14.5 8M3.5 13.5v2a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-2"></path></svg>
                 Upload images
             </button>
             <input class="file-input" id="file-input" type="file" multiple
                    accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,.svg" tabindex="-1" aria-hidden="true">
-            <p class="toolbar-hint">or drop or paste images anywhere on this page</p>
+            <p class="toolbar-hint" id="toolbar-hint">or drop or paste images anywhere on this page</p>
             <div class="view-switch" role="group" aria-label="View">
                 <button class="icon-button" id="view-grid" type="button" aria-pressed="true" aria-label="Grid" title="Grid">
                     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="3" y="3" width="5.5" height="5.5" rx="1.2"></rect><rect x="11.5" y="3" width="5.5" height="5.5" rx="1.2"></rect><rect x="3" y="11.5" width="5.5" height="5.5" rx="1.2"></rect><rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1.2"></rect></svg>
@@ -88,6 +101,128 @@
             <button class="secondary-button load-more" id="load-more" type="button" hidden>Show more images</button>
             <p class="empty-state" id="empty-state" hidden>No images yet. Drop, paste or upload one.</p>
         </section>
+    </div>
+
+    <div id="page-settings" hidden>
+        <p class="back-link"><a id="settings-back" href="/">Back to the images</a></p>
+        <h1 id="settings-title">Project settings</h1>
+        <p class="project-summary" id="settings-slug"></p>
+
+        <section class="panel" aria-labelledby="details-heading">
+            <h2 id="details-heading">Name and description</h2>
+            <form class="form" id="details-form">
+                <label class="field"><span>Name</span><input id="details-name" type="text" maxlength="100" required autocomplete="off"></label>
+                <label class="field"><span>Description</span><input id="details-description" type="text" maxlength="500" autocomplete="off"></label>
+                <p class="form-hint">The short name and all image links stay the same when you rename the project.</p>
+                <div class="form-actions"><button class="primary-button" type="submit">Save</button></div>
+            </form>
+        </section>
+
+        <section class="panel" aria-labelledby="members-heading">
+            <h2 id="members-heading">Members</h2>
+            <p class="form-hint">Viewers see images and copy snippets. Editors also upload and change images. Owners also manage members and the project. Admins have owner rights in every project.</p>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody id="member-rows"></tbody>
+                </table>
+            </div>
+            <form class="form form-inline" id="member-form">
+                <label class="field"><span>User name</span><input id="member-name" type="text" required autocomplete="off" spellcheck="false"></label>
+                <label class="field"><span>Role</span>
+                    <select id="member-role"><option value="viewer">Viewer</option><option value="editor" selected>Editor</option><option value="owner">Owner</option></select>
+                </label>
+                <div class="form-actions"><button class="primary-button" type="submit">Add member</button></div>
+            </form>
+        </section>
+
+        <section class="panel panel-danger" aria-labelledby="delete-heading">
+            <h2 id="delete-heading">Delete project</h2>
+            <p class="form-hint" id="delete-hint"></p>
+            <form class="form form-inline" id="delete-form">
+                <label class="field"><span>Type the short name to confirm</span><input id="delete-confirm" type="text" autocomplete="off" spellcheck="false"></label>
+                <div class="form-actions"><button class="danger-button" id="delete-button" type="submit">Delete project</button></div>
+            </form>
+        </section>
+    </div>
+
+    <div id="page-new-project" hidden>
+        <h1>New project</h1>
+        <p class="project-summary">You become the owner and can add members afterwards.</p>
+        <section class="panel">
+            <form class="form" id="new-project-form">
+                <label class="field"><span>Name</span><input id="new-project-name" type="text" maxlength="100" required autocomplete="off"></label>
+                <label class="field"><span>Short name</span><input id="new-project-slug" type="text" maxlength="64" required autocomplete="off" spellcheck="false" pattern="[a-z0-9](?:[a-z0-9\-]{0,62}[a-z0-9])?" aria-describedby="new-project-slug-hint"></label>
+                <p class="form-hint" id="new-project-slug-hint">Lowercase letters, digits and hyphens. Used in the API and by tools; it cannot be changed later.</p>
+                <label class="field"><span>Description</span><input id="new-project-description" type="text" maxlength="500" autocomplete="off"></label>
+                <div class="form-actions"><button class="primary-button" type="submit">Create project</button></div>
+            </form>
+        </section>
+    </div>
+
+    <div id="page-account" hidden>
+        <h1>Account</h1>
+        <p class="project-summary" id="account-summary"></p>
+        <p class="notice notice-warning" id="start-password-notice" hidden>You signed in with a start password. Choose your own password to continue.</p>
+        <section class="panel" aria-labelledby="password-heading">
+            <h2 id="password-heading">Change password</h2>
+            <form class="form" id="password-form">
+                <input type="text" id="password-user" autocomplete="username" hidden>
+                <label class="field"><span>Current password</span><input id="password-current" type="password" required autocomplete="current-password"></label>
+                <label class="field"><span>New password</span><input id="password-new" type="password" required minlength="12" autocomplete="new-password" aria-describedby="password-hint"></label>
+                <label class="field"><span>Repeat new password</span><input id="password-repeat" type="password" required minlength="12" autocomplete="new-password"></label>
+                <p class="form-hint" id="password-hint">At least 12 characters.</p>
+                <div class="form-actions"><button class="primary-button" type="submit">Change password</button></div>
+            </form>
+            <p class="notice" id="password-done" hidden tabindex="-1">Password changed. Your browser still remembers the old one, so it asks for the new password on the next request. <a href="/">Continue</a></p>
+        </section>
+    </div>
+
+    <div id="page-admin" hidden>
+        <h1>Admin</h1>
+        <p class="project-summary">Users, projects and settings of this instance.</p>
+
+        <ul class="stat-list" id="admin-stats"></ul>
+
+        <section class="panel" aria-labelledby="users-heading">
+            <h2 id="users-heading">Users</h2>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th scope="col">User</th><th scope="col">Status</th><th scope="col">Created</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody id="user-rows"></tbody>
+                </table>
+            </div>
+            <form class="form form-inline" id="user-form">
+                <label class="field"><span>User name</span><input id="user-new-name" type="text" required maxlength="64" autocomplete="off" spellcheck="false"></label>
+                <label class="checkbox"><input id="user-new-admin" type="checkbox"> Admin</label>
+                <div class="form-actions"><button class="primary-button" type="submit">Create user</button></div>
+            </form>
+            <div class="start-password" id="start-password" hidden tabindex="-1">
+                <p id="start-password-text"></p>
+                <div class="snippet-output">
+                    <code class="snippet-code" id="start-password-value" tabindex="0"></code>
+                    <button class="copy-button" id="start-password-copy" type="button"><span>Copy</span></button>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="usage-heading">
+            <h2 id="usage-heading">Projects</h2>
+            <div class="table-wrapper">
+                <table class="data-table">
+                    <thead><tr><th scope="col">Project</th><th scope="col">Images</th><th scope="col">Size</th><th scope="col">Last upload</th></tr></thead>
+                    <tbody id="usage-rows"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="instance-heading">
+            <h2 id="instance-heading">Settings</h2>
+            <label class="checkbox"><input id="setting-create-projects" type="checkbox"> All users may create projects</label>
+            <p class="form-hint">When off, only admins create projects. Whoever creates a project becomes its owner.</p>
+            <dl class="server-info" id="server-info"></dl>
+        </section>
+    </div>
     </main>
 </div>
 <div class="drop-zone" id="drop-zone" hidden>

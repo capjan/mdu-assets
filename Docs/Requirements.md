@@ -325,7 +325,7 @@ AuditEntry(id, at, user_id?, project_id?, action, target, details_json, ip)
 
 | ID | Frage |
 | --- | --- |
-| Q-01 | Dürfen normale Benutzer selbst Projekte anlegen, oder nur Admins? (PRJ-01 sieht eine Admin-Einstellung vor.) |
+| Q-01 | Dürfen normale Benutzer selbst Projekte anlegen, oder nur Admins? (PRJ-01 sieht eine Admin-Einstellung vor.) **Entschieden:** Admins immer, andere Benutzer nur mit der Admin-Einstellung, die anfangs aus ist ([ADR-0014](Architecture/Architecture-Decisions/0014-Project-Creation-by-Admin-Setting.md)). |
 | Q-02 | Soll eine mit Größenparameter oder Format konvertierte Fassung beim Ersetzen sofort verworfen werden (ja, vorgesehen) – und soll der Server bei CDN-Betrieb einen Purge-Hook anbieten? |
 | Q-03 | Soll MDU beim Rendern für Bilder vom Asset-Server `referrerpolicy="no-referrer-when-downgrade"` setzen, damit der Server einzelne Seiten statt nur Sites sieht? Das ist eine Datenschutzabwägung für Leser. |
 | Q-04 | Wie viele Versionen pro Asset sollen standardmäßig aufbewahrt werden (unbegrenzt vs. z. B. 20)? |
