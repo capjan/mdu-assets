@@ -119,6 +119,23 @@ public static class FolderEndpoints
     private static ProblemHttpResult InvalidName() =>
         TypedResults.Problem($"A folder name has 1 to {MaxNameLength} characters.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid folder name");
 
+    /// <summary>A folder given as text: an id of a folder in the project, or <c>none</c> for no folder.</summary>
+    internal sealed record FolderParameter(long? Id, bool None, ProblemHttpResult? Problem);
+
+    internal static FolderParameter ParseFolder(string? value, long projectId, FolderStore folders)
+    {
+        if (value is null)
+            return new FolderParameter(null, false, null);
+        if (value == "none")
+            return new FolderParameter(null, true, null);
+        if (!long.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id))
+            return new FolderParameter(null, false, TypedResults.Problem(
+                $"The folder is a folder id or 'none', not '{value}'.", statusCode: StatusCodes.Status400BadRequest, title: "Invalid folder"));
+        return folders.Find(projectId, id) is null
+            ? new FolderParameter(null, false, UnknownFolder(id))
+            : new FolderParameter(id, false, null);
+    }
+
     internal static ProblemHttpResult UnknownFolder(long id) =>
         TypedResults.Problem($"There is no folder {id} in this project.", statusCode: StatusCodes.Status404NotFound, title: "Unknown folder");
 

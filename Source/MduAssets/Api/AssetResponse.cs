@@ -39,8 +39,11 @@ public sealed record AssetResponse(
 /// <summary>One page of assets; <c>Next</c> is set when another page follows.</summary>
 public sealed record AssetList(IReadOnlyList<AssetResponse> Items, string? Next);
 
-/// <summary>Changes to an asset; properties left out stay as they are.</summary>
-public sealed record AssetChanges(string? FileName, string? AltText, string? Description = null, IReadOnlyList<string>? Tags = null);
+/// <summary>
+/// Changes to an asset; properties left out stay as they are. <c>Folder</c> is a folder id or <c>none</c>, so a change and the
+/// folder land together.
+/// </summary>
+public sealed record AssetChanges(string? FileName, string? AltText, string? Description = null, IReadOnlyList<string>? Tags = null, string? Folder = null);
 
 /// <summary>Moves assets into a folder, or out of all folders when <c>FolderId</c> is <c>null</c>.</summary>
 public sealed record AssetMove(IReadOnlyList<string>? Ids, long? FolderId);

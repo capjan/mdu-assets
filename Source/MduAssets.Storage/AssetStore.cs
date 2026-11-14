@@ -159,11 +159,11 @@ public sealed class AssetStore(Database database)
             {
                 var parameter = $"$word{i}";
                 sql.Append($"""
-                     AND (a.file_name LIKE {parameter} ESCAPE '\' OR a.alt_text LIKE {parameter} ESCAPE '\'
-                          OR a.description LIKE {parameter} ESCAPE '\'
-                          OR EXISTS (SELECT 1 FROM tags t WHERE t.asset_id = a.id AND t.name LIKE {parameter} ESCAPE '\'))
+                     AND (unicode_lower(a.file_name) LIKE {parameter} ESCAPE '\' OR unicode_lower(a.alt_text) LIKE {parameter} ESCAPE '\'
+                          OR unicode_lower(a.description) LIKE {parameter} ESCAPE '\'
+                          OR EXISTS (SELECT 1 FROM tags t WHERE t.asset_id = a.id AND t.key LIKE {parameter} ESCAPE '\'))
                     """);
-                command.Parameters.AddWithValue(parameter, "%" + EscapeLike(words[i]) + "%");
+                command.Parameters.AddWithValue(parameter, "%" + EscapeLike(TagKey(words[i])) + "%");
             }
         }
 
@@ -179,8 +179,8 @@ public sealed class AssetStore(Database database)
 
         if (!string.IsNullOrWhiteSpace(query.Tag))
         {
-            sql.Append(" AND EXISTS (SELECT 1 FROM tags t WHERE t.asset_id = a.id AND t.name = $tag)");
-            command.Parameters.AddWithValue("$tag", query.Tag.Trim());
+            sql.Append(" AND EXISTS (SELECT 1 FROM tags t WHERE t.asset_id = a.id AND t.key = $tag)");
+            command.Parameters.AddWithValue("$tag", TagKey(query.Tag.Trim()));
         }
 
         if (query.ContentType is not null)
@@ -207,6 +207,9 @@ public sealed class AssetStore(Database database)
             command.Parameters.AddWithValue("$uploader", query.UploadedBy.Trim());
         }
     }
+
+    /// <summary>How tags and search words compare: lower case for every alphabet, not only A to Z.</summary>
+    public static string TagKey(string value) => value.ToLowerInvariant();
 
     private static string EscapeLike(string value) =>
         value.Replace(@"\", @"\\", StringComparison.Ordinal).Replace("%", @"\%", StringComparison.Ordinal).Replace("_", @"\_", StringComparison.Ordinal);
@@ -249,11 +252,13 @@ public sealed class AssetStore(Database database)
     }
 
     /// <summary>
-    /// Changes the descriptive fields. <paramref name="tags"/> replaces all tags when given. The public link stays valid,
+    /// Changes the descriptive fields and, with <paramref name="changeFolder"/>, the folder, in one transaction.
+    /// <paramref name="tags"/> replaces all tags when given. The public link stays valid,
     /// because only the id is used for lookups.
     /// </summary>
     /// <returns>The updated asset, or <c>null</c> for an unknown id.</returns>
-    public AssetFile? Update(string id, string fileName, string altText, string description, IReadOnlyCollection<string>? tags)
+    public AssetFile? Update(string id, string fileName, string altText, string description, IReadOnlyCollection<string>? tags,
+        bool changeFolder = false, long? folderId = null)
     {
         using (var connection = database.Open())
         using (var transaction = connection.BeginTransaction())
@@ -261,7 +266,13 @@ public sealed class AssetStore(Database database)
             using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
-                command.CommandText = "UPDATE assets SET file_name = $fileName, alt_text = $alt, description = $description WHERE id = $id;";
+                command.CommandText = """
+                    UPDATE assets SET file_name = $fileName, alt_text = $alt, description = $description,
+                        folder_id = CASE WHEN $changeFolder THEN $folder ELSE folder_id END
+                    WHERE id = $id;
+                    """;
+                command.Parameters.AddWithValue("$changeFolder", changeFolder);
+                command.Parameters.AddWithValue("$folder", (object?)folderId ?? DBNull.Value);
                 command.Parameters.AddWithValue("$id", id);
                 command.Parameters.AddWithValue("$fileName", fileName);
                 command.Parameters.AddWithValue("$alt", altText);
@@ -284,8 +295,9 @@ public sealed class AssetStore(Database database)
                 {
                     using var insert = connection.CreateCommand();
                     insert.Transaction = transaction;
-                    insert.CommandText = "INSERT OR IGNORE INTO tags (asset_id, name) VALUES ($id, $name);";
+                    insert.CommandText = "INSERT OR IGNORE INTO tags (asset_id, key, name) VALUES ($id, $key, $name);";
                     insert.Parameters.AddWithValue("$id", id);
+                    insert.Parameters.AddWithValue("$key", TagKey(tag));
                     insert.Parameters.AddWithValue("$name", tag);
                     insert.ExecuteNonQuery();
                 }
@@ -304,21 +316,15 @@ public sealed class AssetStore(Database database)
     public int Move(long projectId, IReadOnlyCollection<string> ids, long? folderId)
     {
         using var connection = database.Open();
-        using var transaction = connection.BeginTransaction();
-        var moved = 0;
-        foreach (var id in ids.Distinct(StringComparer.Ordinal))
-        {
-            using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = "UPDATE assets SET folder_id = $folder WHERE id = $id AND project_id = $project;";
-            command.Parameters.AddWithValue("$id", id);
-            command.Parameters.AddWithValue("$project", projectId);
-            command.Parameters.AddWithValue("$folder", (object?)folderId ?? DBNull.Value);
-            moved += command.ExecuteNonQuery();
-        }
-
-        transaction.Commit();
-        return moved;
+        using var command = connection.CreateCommand();
+        var distinct = ids.Distinct(StringComparer.Ordinal).ToList();
+        var names = distinct.Select((_, i) => $"$id{i}").ToList();
+        command.CommandText = $"UPDATE assets SET folder_id = $folder WHERE project_id = $project AND id IN ({string.Join(", ", names)});";
+        for (var i = 0; i < distinct.Count; i++)
+            command.Parameters.AddWithValue(names[i], distinct[i]);
+        command.Parameters.AddWithValue("$project", projectId);
+        command.Parameters.AddWithValue("$folder", (object?)folderId ?? DBNull.Value);
+        return command.ExecuteNonQuery();
     }
 
     /// <summary>Tags with their use, uploaders and file types of a project, for suggestions and filters.</summary>
@@ -340,8 +346,8 @@ public sealed class AssetStore(Database database)
 
         return new AssetFacets(
             Query("""
-                SELECT t.name, count(*) FROM tags t JOIN assets a ON a.id = t.asset_id
-                WHERE a.project_id = $project GROUP BY t.name ORDER BY count(*) DESC, t.name;
+                SELECT min(t.name), count(*) FROM tags t JOIN assets a ON a.id = t.asset_id
+                WHERE a.project_id = $project GROUP BY t.key ORDER BY count(*) DESC, t.key;
                 """, r => new TagCount(r.GetString(0), r.GetInt32(1))),
             Query("""
                 SELECT DISTINCT u.name FROM assets a JOIN users u ON u.id = a.created_by
@@ -364,7 +370,7 @@ public sealed class AssetStore(Database database)
 
     private const string SelectCurrent = """
         SELECT a.id, a.project_id, p.slug, a.folder_id, a.file_name, a.alt_text, a.description,
-               (SELECT group_concat(t.name, char(31)) FROM (SELECT name FROM tags WHERE asset_id = a.id ORDER BY name) t),
+               (SELECT group_concat(t.name, char(31)) FROM (SELECT name FROM tags WHERE asset_id = a.id ORDER BY key) t),
                v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, u.name, v.created_at
         FROM assets a
         JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version

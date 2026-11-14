@@ -322,9 +322,18 @@ $("clear-selection").addEventListener("click", () => {
     announce("Selection cleared.");
 });
 
+// Updates only the toggled card or row and the selection bar, so large grids do not redraw.
 function toggleSelected(asset) {
     if (state.selected.has(asset.id)) state.selected.delete(asset.id); else state.selected.add(asset.id);
-    renderAssets();
+    const selected = state.selected.has(asset.id);
+    for (const link of document.querySelectorAll(`#asset-grid [data-id="${asset.id}"], #asset-rows [data-id="${asset.id}"]`)) {
+        const item = link.closest("li, tr");
+        item.classList.toggle("is-selected", selected);
+        item.querySelector(".asset-select").checked = selected;
+        if (link.classList.contains("asset-card"))
+            link.setAttribute("aria-label", `${asset.fileName}, ${formatDimensions(asset)}, ${formatSize(asset.size)}${selected ? ", selected" : ""}`);
+    }
+    renderSelectionBar();
     announce(`${state.selected.has(asset.id) ? "Selected" : "Deselected"} ${asset.fileName}. ${plural(state.selected.size, "image", "images")} selected.`);
 }
 
@@ -344,7 +353,8 @@ function renderFilters() {
     options($("filter-tag"), "Any tag", facets.tags.map((t) => [t.name, `${t.name} (${numberFormat.format(t.count)})`]));
     options($("filter-type"), "Any type", facets.types.map((t) => [typeKey(t), typeLabels[t] ?? t]));
     options($("filter-uploader"), "Anyone", facets.uploaders.map((u) => [u, u]));
-    $("search-input").value = filters.q;
+    // A search the user is still typing stays as it is when the lists refresh.
+    if (document.activeElement !== $("search-input")) $("search-input").value = filters.q;
     $("filter-tag").value = filters.tag;
     $("filter-type").value = filters.type;
     $("filter-uploader").value = filters.uploader;
@@ -420,8 +430,16 @@ function assetsPath(after) {
     if (after) query.set("after", after);
     if (state.folder) query.set("folder", state.folder);
     if (state.folder && state.folder !== "none" && state.filters.subfolders) query.set("subfolders", "true");
-    for (const key of ["q", "tag", "type", "uploader", "from", "to"]) if (state.filters[key]) query.set(key, state.filters[key]);
+    for (const key of ["q", "tag", "type", "uploader"]) if (state.filters[key]) query.set(key, state.filters[key]);
+    // Dates are days of the viewer's time zone, as the list shows them; the server gets the exact times.
+    if (state.filters.from) query.set("fromTime", localMidnight(state.filters.from));
+    if (state.filters.to) query.set("beforeTime", localMidnight(state.filters.to, 1));
     return `${projectPath()}/assets?${query}`;
+}
+
+function localMidnight(date, addDays = 0) {
+    const [year, month, day] = date.split("-").map(Number);
+    return new Date(year, month - 1, day + addDays).toISOString();
 }
 
 async function loadAssets() {
@@ -490,6 +508,12 @@ function sortedAssets() {
     return direction === "descending" ? sorted.reverse() : sorted;
 }
 
+function renderSelectionBar() {
+    $("selection-bar").hidden = state.selected.size === 0;
+    $("selection-count").textContent = `${plural(state.selected.size, "image", "images")} selected`;
+    $("move-selected").hidden = !canEdit();
+}
+
 const detailsLink = (asset) => `/?project=${encodeURIComponent(state.project)}&asset=${encodeURIComponent(asset.id)}`;
 
 function renderAssets() {
@@ -503,9 +527,7 @@ function renderAssets() {
 
     // Selected images that are no longer listed (after a search or move) drop out of the selection.
     for (const id of state.selected) if (!assets.some((a) => a.id === id)) state.selected.delete(id);
-    $("selection-bar").hidden = state.selected.size === 0;
-    $("selection-count").textContent = `${plural(state.selected.size, "image", "images")} selected`;
-    $("move-selected").hidden = !editable;
+    renderSelectionBar();
 
     const grid = state.view === "grid";
     $("asset-grid").hidden = !grid;
@@ -852,6 +874,9 @@ async function refreshProjectCounts() {
         state.projects = (await request("/projects")).items;
         renderProjects();
         await loadFolders();
+        // New uploads can bring a new uploader or type into the filter lists.
+        await loadFacets();
+        renderFilters();
     } catch { }
 }
 
@@ -908,4 +933,9 @@ load().catch((error) => {
     $("project-toolbar").hidden = true;
     $("empty-state").hidden = false;
     $("empty-state").textContent = `Could not load the page: ${error.message}`;
+});
+
+// A page restored from the back-forward cache would show folders, tags and images as they were; load it fresh.
+window.addEventListener("pageshow", (event) => {
+    if (event.persisted) location.reload();
 });

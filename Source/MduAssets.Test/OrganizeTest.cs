@@ -230,4 +230,66 @@ public sealed class OrganizeTest : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, (await sam.GetAsync($"/api/v1/lookup?url={asset.Id}", Cancel)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await sam.GetAsync("/api/v1/projects/default/facets", Cancel)).StatusCode);
     }
+    [Fact]
+    public async Task IgnoresCaseForEveryAlphabet()
+    {
+        var a = await Upload("a.png");
+        var b = await Upload("b.png");
+        await Patch(a.Id, new AssetChanges(null, "Änderungen im Dialog", null, ["Übersicht"]));
+        await Patch(b.Id, new AssetChanges(null, null, null, ["übersicht"]));
+
+        Assert.Equal(["a.png"], await Search("?q=%C3%A4nderungen"));
+        Assert.Equal(["a.png", "b.png"], await Search("?tag=%C3%9CBERSICHT"));
+        Assert.Equal(["a.png", "b.png"], await Search("?q=%C3%BCbersicht"));
+        var facets = await _admin.GetFromJsonAsync<FacetsResponse>("/api/v1/projects/default/facets", Json, Cancel);
+        Assert.Equal(2, Assert.Single(facets!.Tags).Count);
+        var duplicate = await (await Patch(a.Id, new AssetChanges(null, null, null, ["Ärger", "ärger"]))).Content.ReadFromJsonAsync<AssetResponse>(Json, Cancel);
+        Assert.Equal(["Ärger"], duplicate!.Tags);
+    }
+
+    [Fact]
+    public async Task FiltersByExactTimes()
+    {
+        await Upload("now.png");
+        var now = DateTimeOffset.UtcNow;
+        string Time(DateTimeOffset t) => Uri.EscapeDataString(t.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+
+        Assert.Equal(["now.png"], await Search($"?fromTime={Time(now.AddMinutes(-5))}&beforeTime={Time(now.AddMinutes(5))}"));
+        Assert.Empty(await Search($"?beforeTime={Time(now.AddMinutes(-5))}"));
+        Assert.Empty(await Search($"?fromTime={Time(now.AddMinutes(5).ToOffset(TimeSpan.FromHours(14)))}"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await _admin.GetAsync("/api/v1/projects/default/assets?fromTime=yesterday", Cancel)).StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangesTextAndFolderInOneRequest()
+    {
+        var folder = await CreateFolder("Screens");
+        var asset = await Upload("a.png");
+
+        var moved = await (await Patch(asset.Id, new AssetChanges(null, "Moved", null, null, folder.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))))
+            .Content.ReadFromJsonAsync<AssetResponse>(Json, Cancel);
+        Assert.Equal((folder.Id, "Moved"), (moved!.FolderId, moved.AltText));
+
+        var kept = await (await Patch(asset.Id, new AssetChanges(null, "Kept"))).Content.ReadFromJsonAsync<AssetResponse>(Json, Cancel);
+        Assert.Equal(folder.Id, kept!.FolderId);
+
+        var unfiled = await (await Patch(asset.Id, new AssetChanges(null, null, null, null, "none"))).Content.ReadFromJsonAsync<AssetResponse>(Json, Cancel);
+        Assert.Null(unfiled!.FolderId);
+
+        var rejected = await Patch(asset.Id, new AssetChanges(null, "Not saved", null, null, "999"));
+        Assert.Equal(HttpStatusCode.NotFound, rejected.StatusCode);
+        Assert.Equal("Kept", (await _admin.GetFromJsonAsync<AssetResponse>($"/api/v1/assets/{asset.Id}", Json, Cancel))!.AltText);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/projects/default/assets?folder=guides")]
+    [InlineData("/api/v1/projects/default/assets?folder=-1")]
+    public async Task ExplainsAFolderThatIsNoId(string path)
+    {
+        var response = await _admin.GetAsync(path, Cancel);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(Json, Cancel);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("Invalid folder", problem.GetProperty("title").GetString());
+    }
 }

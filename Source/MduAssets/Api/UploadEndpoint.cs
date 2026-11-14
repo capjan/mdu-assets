@@ -29,14 +29,11 @@ public static class UploadEndpoint
             return problem;
 
         // ?folder=<id> files the upload into a folder of the project (ORG-01).
-        long? folderId = null;
-        if (context.Request.Query["folder"].ToString() is { Length: > 0 } folderText)
-        {
-            if (!long.TryParse(folderText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) ||
-                folders.Find(target.Id, id) is null)
-                return FolderEndpoints.UnknownFolder(id);
-            folderId = id;
-        }
+        var folderText = context.Request.Query["folder"].ToString();
+        var folder = FolderEndpoints.ParseFolder(folderText.Length == 0 ? null : folderText, target.Id, folders);
+        if (folder.Problem is { } folderProblem)
+            return folderProblem;
+        var folderId = folder.Id;
 
         var limit = settings.Options.MaxUploadBytes;
         if (context.Request.ContentLength > limit + MultipartOverhead)

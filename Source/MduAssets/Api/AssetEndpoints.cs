@@ -41,11 +41,12 @@ public static class AssetEndpoints
     /// Lists a project's assets newest first, at most <c>limit</c> at a time; <c>next</c> is the <c>after</c> value of the
     /// following page. Filters (ORG-04): <c>q</c> (words in name, alt text, description or tags), <c>folder</c> (an id or
     /// <c>none</c>), <c>subfolders</c>, <c>tag</c>, <c>type</c> (for example <c>png</c>), <c>from</c> and <c>to</c>
-    /// (upload dates, inclusive), <c>uploader</c>.
+    /// (upload dates in UTC, inclusive), <c>fromTime</c> and <c>beforeTime</c> (ISO 8601 times with offset; the web interface
+    /// sends these for the days of its own time zone; <c>beforeTime</c> is exclusive), <c>uploader</c>.
     /// </summary>
     private static Results<Ok<AssetList>, ProblemHttpResult> List(
         string project, int? limit, string? after, string? q, string? folder, bool? subfolders, string? tag, string? type,
-        string? from, string? to, string? uploader,
+        string? from, string? to, string? fromTime, string? beforeTime, string? uploader,
         ClaimsPrincipal user, ProjectAccess access, AssetStore assets, FolderStore folders, ServerSettings settings)
     {
         if (!access.TryGet(user, project, ProjectRole.Viewer, out var target, out var problem))
@@ -56,14 +57,13 @@ public static class AssetEndpoints
         if (after is not null && (!AssetId.IsValid(after) || !assets.Contains(target.Id, after)))
             return Invalid("Invalid cursor", $"There is no asset '{after}' in this project to continue after.");
 
+        if (FolderEndpoints.ParseFolder(folder, target.Id, folders) is { Problem: { } folderProblem })
+            return folderProblem;
         IReadOnlyList<long>? folderIds = null;
-        var unfiled = false;
-        if (folder is "none")
-            unfiled = true;
-        else if (folder is not null)
+        var unfiled = folder is "none";
+        if (!unfiled && folder is not null)
         {
-            if (!long.TryParse(folder, NumberStyles.None, CultureInfo.InvariantCulture, out var folderId) || folders.Find(target.Id, folderId) is null)
-                return FolderEndpoints.UnknownFolder(folderId);
+            var folderId = long.Parse(folder, CultureInfo.InvariantCulture);
             folderIds = subfolders == true ? folders.Subtree(folderId) : [folderId];
         }
 
@@ -72,12 +72,29 @@ public static class AssetEndpoints
             return Invalid("Invalid type", $"The type is one of {string.Join(", ", TypeNames.Keys)}.");
         if (!TryParseDate(from, out var start) || !TryParseDate(to, out var end))
             return Invalid("Invalid date", "Dates are written as yyyy-mm-dd.");
+        if (!TryParseTime(fromTime, out var startTime) || !TryParseTime(beforeTime, out var endTime))
+            return Invalid("Invalid time", "Times are ISO 8601 with an offset, for example 2026-11-14T00:00:00+01:00.");
 
-        var query = new AssetQuery(q, folderIds, unfiled, tag, contentType, start, end?.AddDays(1), uploader);
+        var query = new AssetQuery(q, folderIds, unfiled, tag, contentType, Later(start, startTime), Earlier(end?.AddDays(1), endTime), uploader);
         var page = assets.List(target.Id, size, after, query);
         var items = page.Take(size).Select(a => AssetResponse.From(a, settings)).ToList();
         return TypedResults.Ok(new AssetList(items, page.Count > size ? items[^1].Id : null));
     }
+
+    private static bool TryParseTime(string? value, out DateTimeOffset? time)
+    {
+        time = null;
+        if (string.IsNullOrEmpty(value))
+            return true;
+        if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+            return false;
+        time = parsed;
+        return true;
+    }
+
+    private static DateTimeOffset? Later(DateTimeOffset? a, DateTimeOffset? b) => a is null ? b : b is null ? a : a > b ? a : b;
+
+    private static DateTimeOffset? Earlier(DateTimeOffset? a, DateTimeOffset? b) => a is null ? b : b is null ? a : a < b ? a : b;
 
     private static bool TryParseDate(string? value, out DateTimeOffset? date)
     {
@@ -100,7 +117,7 @@ public static class AssetEndpoints
     }
 
     private static Results<Ok<AssetResponse>, ProblemHttpResult> Update(
-        string id, AssetChanges changes, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, ServerSettings settings)
+        string id, AssetChanges changes, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, FolderStore folders, ServerSettings settings)
     {
         if (!AssetId.IsValid(id) || assets.FindCurrent(id) is not { } asset)
             return ProjectAccess.UnknownAsset(id);
@@ -124,7 +141,11 @@ public static class AssetEndpoints
                 return Invalid("Invalid tags", error);
         }
 
-        return TypedResults.Ok(AssetResponse.From(assets.Update(id, fileName, altText, description, tags)!, settings));
+        var folder = FolderEndpoints.ParseFolder(changes.Folder, asset.ProjectId, folders);
+        if (folder.Problem is { } folderProblem)
+            return folderProblem;
+
+        return TypedResults.Ok(AssetResponse.From(assets.Update(id, fileName, altText, description, tags, changes.Folder is not null, folder.Id)!, settings));
     }
 
     /// <summary>Moves assets of the project into a folder or out of all folders (ORG-02); their links stay the same.</summary>

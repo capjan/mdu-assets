@@ -15,11 +15,13 @@ ALTER TABLE assets ADD COLUMN description TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX assets_folder ON assets (folder_id);
 
--- Free tags per asset (ORG-03), compared without case.
+-- Free tags per asset (ORG-03). `key` is the lower-case form from .NET, so tags compare without case for all
+-- letters, not only A to Z as SQLite's NOCASE does; `name` keeps the spelling shown.
 CREATE TABLE tags (
     asset_id TEXT NOT NULL REFERENCES assets (id),
-    name     TEXT NOT NULL COLLATE NOCASE,
-    PRIMARY KEY (asset_id, name)
+    key      TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    PRIMARY KEY (asset_id, key)
 );
 
-CREATE INDEX tags_name ON tags (name);
+CREATE INDEX tags_key ON tags (key);

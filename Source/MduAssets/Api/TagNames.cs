@@ -17,7 +17,7 @@ public static class TagNames
                 continue;
             if (tag.Length > MaxLength)
                 return (null, $"A tag has at most {MaxLength} characters.");
-            if (!result.Contains(tag, StringComparer.OrdinalIgnoreCase))
+            if (!result.Any(t => t.ToLowerInvariant() == tag.ToLowerInvariant()))
                 result.Add(tag);
         }
 

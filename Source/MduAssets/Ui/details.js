@@ -113,6 +113,7 @@ export async function showDetails(project, id, { editable, onFolderChange }) {
         if (added.length) announce(`Added ${added.join(", ")}.`);
     };
     tagInput.addEventListener("keydown", (event) => {
+        if (!editable) return;
         if (event.key === "Enter" || event.key === ",") {
             event.preventDefault();
             addTags();
@@ -135,15 +136,13 @@ export async function showDetails(project, id, { editable, onFolderChange }) {
     handleSubmit(form, async () => {
         clearFormError(form);
         if (tagInput.value.trim()) addTags();
-        let updated = await send(`/assets/${encodeURIComponent(current.id)}`, "PATCH", {
+        // One request, so text, tags and folder are saved together or not at all.
+        const folderChanged = (fields.folder.value || null) !== (current.folderId === null ? null : String(current.folderId));
+        const updated = await send(`/assets/${encodeURIComponent(current.id)}`, "PATCH", {
             fileName: fields.fileName.value, altText: fields.altText.value, description: fields.description.value, tags,
+            folder: fields.folder.value || "none",
         });
-        const folderId = fields.folder.value ? Number(fields.folder.value) : null;
-        if (folderId !== updated.folderId) {
-            await send(`/projects/${encodeURIComponent(project.slug)}/assets/move`, "POST", { ids: [updated.id], folderId });
-            updated = { ...updated, folderId };
-            await onFolderChange?.();
-        }
+        if (folderChanged) await onFolderChange?.();
         fields.fileName.value = updated.fileName;
         tags = [...updated.tags];
         renderTags();
