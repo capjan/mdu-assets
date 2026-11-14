@@ -113,3 +113,82 @@ export function flashCopied(button, ok) {
         button.lastChild.textContent = "Copy";
     }, 1600);
 }
+
+let dialogCount = 0;
+
+/**
+ * Shows a modal dialog with the given fields and resolves to true when confirmed, false when cancelled.
+ * Escape and the Cancel button close it; focus returns to the element that opened it.
+ */
+export function openDialog({ title, text = "", fields = [], confirmLabel, danger = false }) {
+    return new Promise((resolve) => {
+        const opener = document.activeElement;
+        const titleId = `dialog-title-${++dialogCount}`;
+        const confirm = element("button", { class: danger ? "danger-button" : "primary-button", type: "submit", value: "confirm", text: confirmLabel });
+        const cancel = element("button", { class: "secondary-button", type: "button", text: "Cancel" });
+        const form = element("form", { class: "form", method: "dialog" }, [
+            element("h2", { id: titleId, text: title }),
+            ...(text ? [element("p", { class: "form-hint", text })] : []),
+            ...fields,
+            element("div", { class: "form-actions" }, [confirm, cancel]),
+        ]);
+        const dialog = element("dialog", { class: "dialog", "aria-labelledby": titleId }, [form]);
+        cancel.addEventListener("click", () => dialog.close("cancel"));
+        dialog.addEventListener("close", () => {
+            dialog.remove();
+            opener?.focus?.();
+            resolve(dialog.returnValue === "confirm");
+        });
+        document.body.append(dialog);
+        dialog.showModal();
+        (form.querySelector("input, select") ?? confirm).focus();
+    });
+}
+
+/** Folders in tree order with their depth: parents before children, siblings by name. */
+export function folderTree(folders) {
+    const children = new Map();
+    for (const folder of folders) {
+        const key = folder.parentId ?? 0;
+        if (!children.has(key)) children.set(key, []);
+        children.get(key).push(folder);
+    }
+    const ordered = [];
+    const visit = (parentId, depth) => {
+        for (const folder of (children.get(parentId) ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
+            ordered.push({ ...folder, depth });
+            visit(folder.id, depth + 1);
+        }
+    };
+    visit(0, 0);
+    return ordered;
+}
+
+/** The ids of a folder and everything below it. */
+export function folderSubtree(folders, id) {
+    const ids = new Set([id]);
+    let grew = true;
+    while (grew) {
+        grew = false;
+        for (const folder of folders)
+            if (folder.parentId !== null && ids.has(folder.parentId) && !ids.has(folder.id)) { ids.add(folder.id); grew = true; }
+    }
+    return ids;
+}
+
+/** Options for a folder select: a first entry for "no folder", then the tree indented by depth. */
+export function folderOptions(folders, { noneLabel, selected = "", exclude = new Set() }) {
+    return [
+        element("option", { value: "", text: noneLabel, selected: selected === "" }),
+        ...folderTree(folders).filter((folder) => !exclude.has(folder.id)).map((folder) =>
+            element("option", { value: String(folder.id), selected: String(folder.id) === String(selected), text: `${" ".repeat(folder.depth)}${folder.name}` })),
+    ];
+}
+
+/** The folder and its parents, from the top level down. */
+export function folderPath(folders, id) {
+    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    const path = [];
+    for (let folder = byId.get(id); folder; folder = byId.get(folder.parentId)) path.unshift(folder);
+    return path;
+}

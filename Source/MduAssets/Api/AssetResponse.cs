@@ -8,25 +8,31 @@ namespace MduAssets.Api;
 /// <summary>What the API returns for an asset (API-05).</summary>
 public sealed record AssetResponse(
     string Id,
+    string Project,
+    long? FolderId,
     string Url,
     string FileName,
     string AltText,
+    string Description,
+    IReadOnlyList<string> Tags,
     string Markdown,
     string Html,
     int? Width,
     int? Height,
     long Size,
     string ContentType,
+    string Sha256,
     int Version,
+    string UploadedBy,
     DateTimeOffset CreatedAt)
 {
     public static AssetResponse From(AssetFile asset, ServerSettings settings)
     {
         var url = settings.PublicLink(asset.Id, asset.FileName);
         return new AssetResponse(
-            asset.Id, url, asset.FileName, asset.AltText,
+            asset.Id, asset.ProjectSlug, asset.FolderId, url, asset.FileName, asset.AltText, asset.Description, asset.Tags,
             Snippets.Markdown(asset.AltText, url), Snippets.Html(asset.AltText, url, asset.Width, asset.Height),
-            asset.Width, asset.Height, asset.Size, asset.ContentType, asset.Version, asset.CreatedAt);
+            asset.Width, asset.Height, asset.Size, asset.ContentType, asset.BlobSha256, asset.Version, asset.UploadedBy, asset.CreatedAt);
     }
 }
 
@@ -34,7 +40,28 @@ public sealed record AssetResponse(
 public sealed record AssetList(IReadOnlyList<AssetResponse> Items, string? Next);
 
 /// <summary>Changes to an asset; properties left out stay as they are.</summary>
-public sealed record AssetChanges(string? FileName, string? AltText);
+public sealed record AssetChanges(string? FileName, string? AltText, string? Description = null, IReadOnlyList<string>? Tags = null);
+
+/// <summary>Moves assets into a folder, or out of all folders when <c>FolderId</c> is <c>null</c>.</summary>
+public sealed record AssetMove(IReadOnlyList<string>? Ids, long? FolderId);
+
+public sealed record AssetMoveResult(int Moved);
+
+public sealed record FolderResponse(long Id, long? ParentId, string Name, int AssetCount);
+
+public sealed record FolderList(IReadOnlyList<FolderResponse> Items);
+
+public sealed record NewFolder(string? Name, long? ParentId);
+
+public sealed record FolderChanges(string? Name);
+
+/// <summary>Moves a folder under another one, or to the top level when <c>ParentId</c> is <c>null</c>.</summary>
+public sealed record FolderMove(long? ParentId);
+
+public sealed record TagCountResponse(string Name, int Count);
+
+/// <summary>Values for the filters and tag suggestions of a project.</summary>
+public sealed record FacetsResponse(IReadOnlyList<TagCountResponse> Tags, IReadOnlyList<string> Uploaders, IReadOnlyList<string> Types);
 
 /// <summary>A project with its usage. <c>Role</c> is what the caller may do: their membership, or <c>owner</c> for admins.</summary>
 public sealed record ProjectResponse(
@@ -105,6 +132,14 @@ public sealed record ServerInfo(string UiBaseUrl, string PublicBaseUrl, long Max
 [JsonSerializable(typeof(AssetResponse))]
 [JsonSerializable(typeof(AssetList))]
 [JsonSerializable(typeof(AssetChanges))]
+[JsonSerializable(typeof(AssetMove))]
+[JsonSerializable(typeof(AssetMoveResult))]
+[JsonSerializable(typeof(FolderResponse))]
+[JsonSerializable(typeof(FolderList))]
+[JsonSerializable(typeof(NewFolder))]
+[JsonSerializable(typeof(FolderChanges))]
+[JsonSerializable(typeof(FolderMove))]
+[JsonSerializable(typeof(FacetsResponse))]
 [JsonSerializable(typeof(ProjectResponse))]
 [JsonSerializable(typeof(ProjectList))]
 [JsonSerializable(typeof(NewProject))]

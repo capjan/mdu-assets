@@ -44,6 +44,10 @@
             <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4.5v11M4.5 10h11"></path></svg>
             New project
         </a>
+        <div class="folder-nav" id="folder-nav" hidden>
+            <p class="sidebar-label" id="folders-label">Folders</p>
+            <ul class="folder-tree" id="folder-tree" aria-labelledby="folders-label"></ul>
+        </div>
     </nav>
     <main class="main" id="main" tabindex="-1">
     <div id="page-project" hidden>
@@ -53,6 +57,16 @@
         </div>
         <p class="project-summary" id="project-summary"></p>
         <p class="project-description" id="project-description" hidden></p>
+        <div class="folder-bar" id="folder-bar">
+            <nav class="folder-path" id="folder-path" aria-label="Folder"></nav>
+            <label class="field folder-select"><span>Folder</span><select id="folder-select"></select></label>
+            <div class="folder-actions" id="folder-actions" hidden>
+                <button class="secondary-button" id="new-folder" type="button">New folder</button>
+                <button class="secondary-button" id="rename-folder" type="button" hidden>Rename</button>
+                <button class="secondary-button" id="move-folder" type="button" hidden>Move</button>
+                <button class="secondary-button" id="delete-folder" type="button" hidden>Delete folder</button>
+            </div>
+        </div>
         <p class="notice" id="viewer-notice" hidden>You can view and copy snippets in this project. Ask an owner for the editor role to upload or change images.</p>
 
         <div class="toolbar" id="project-toolbar">
@@ -84,11 +98,39 @@
 
         <section class="assets" aria-labelledby="assets-heading">
             <h2 class="visually-hidden" id="assets-heading">All images</h2>
-            <ul class="asset-grid" id="asset-grid"></ul>
+            <form class="search-form" id="search-form" role="search">
+                <div class="search-row">
+                    <label class="visually-hidden" for="search-input">Search images, or paste an image link to find it</label>
+                    <input class="search-input" id="search-input" type="search" placeholder="Search, or paste an image link" autocomplete="off" spellcheck="false">
+                    <button class="secondary-button" type="submit">Search</button>
+                </div>
+                <details class="filters" id="filters">
+                    <summary>Filters<span class="filter-count" id="filter-count"></span></summary>
+                    <div class="filter-fields">
+                        <label class="field"><span>Tag</span><select id="filter-tag"><option value="">Any tag</option></select></label>
+                        <label class="field"><span>Type</span><select id="filter-type"><option value="">Any type</option></select></label>
+                        <label class="field"><span>Uploaded by</span><select id="filter-uploader"><option value="">Anyone</option></select></label>
+                        <label class="field"><span>Uploaded from</span><input id="filter-from" type="date"></label>
+                        <label class="field"><span>Uploaded until</span><input id="filter-to" type="date"></label>
+                        <label class="checkbox"><input id="filter-subfolders" type="checkbox"> Include subfolders</label>
+                        <div class="form-actions"><button class="secondary-button" id="clear-filters" type="button">Clear filters</button></div>
+                    </div>
+                </details>
+            </form>
+            <div class="selection-bar" id="selection-bar" hidden>
+                <span id="selection-count" aria-live="polite"></span>
+                <button class="secondary-button" id="move-selected" type="button">Move to folder…</button>
+                <button class="secondary-button" id="clear-selection" type="button">Clear selection</button>
+            </div>
+            <p class="keyboard-hint" id="keyboard-hint" hidden>
+                <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>Enter</kbd> opens, <kbd>C</kbd> copies the Markdown, <kbd>Space</kbd> selects
+            </p>
+            <ul class="asset-grid" id="asset-grid" aria-describedby="keyboard-hint"></ul>
             <div class="table-wrapper" id="asset-table-wrapper" hidden>
                 <table class="asset-table" id="asset-table">
                     <thead>
                     <tr>
+                        <th scope="col" class="select-column"><span class="visually-hidden">Selected</span></th>
                         <th scope="col" aria-sort="none"><button type="button" data-sort="fileName">Name</button></th>
                         <th scope="col" aria-sort="none"><button type="button" data-sort="pixels">Dimensions</button></th>
                         <th scope="col" aria-sort="none"><button type="button" data-sort="size">Size</button></th>
@@ -101,6 +143,51 @@
             <button class="secondary-button load-more" id="load-more" type="button" hidden>Show more images</button>
             <p class="empty-state" id="empty-state" hidden>No images yet. Drop, paste or upload one.</p>
         </section>
+    </div>
+
+    <div id="page-asset" hidden>
+        <p class="back-link"><a id="asset-back" href="/">Back to the images</a></p>
+        <h1 class="asset-title" id="asset-title"></h1>
+        <p class="project-summary" id="asset-summary"></p>
+        <div class="asset-layout">
+            <section class="asset-preview-panel" aria-label="Preview">
+                <div class="preview-switch" role="group" aria-label="Preview background">
+                    <button class="secondary-button" type="button" data-background="checker" aria-pressed="true">Checkerboard</button>
+                    <button class="secondary-button" type="button" data-background="light" aria-pressed="false">Light</button>
+                    <button class="secondary-button" type="button" data-background="dark" aria-pressed="false">Dark</button>
+                </div>
+                <div class="asset-preview" id="asset-preview" data-background="checker"></div>
+            </section>
+            <div class="asset-side">
+                <section class="panel" aria-labelledby="asset-snippets-heading">
+                    <h2 id="asset-snippets-heading">Snippets</h2>
+                    <div class="snippet-rows" id="asset-snippets"></div>
+                </section>
+                <section class="panel" aria-labelledby="asset-details-heading">
+                    <h2 id="asset-details-heading">Description</h2>
+                    <form class="form" id="asset-form">
+                        <label class="field"><span>File name</span><input id="asset-file-name" type="text" required autocomplete="off" spellcheck="false"></label>
+                        <label class="field"><span>Alt text</span><input id="asset-alt" type="text" required autocomplete="off"></label>
+                        <label class="field"><span>Description</span><textarea id="asset-description" rows="3" maxlength="1000"></textarea></label>
+                        <div class="field">
+                            <label for="asset-tag-input"><span>Tags</span></label>
+                            <div class="tag-editor" id="asset-tag-editor">
+                                <ul class="tag-list" id="asset-tags" aria-label="Tags"></ul>
+                                <input id="asset-tag-input" type="text" list="asset-tag-suggestions" autocomplete="off" aria-describedby="asset-tag-hint">
+                            </div>
+                            <datalist id="asset-tag-suggestions"></datalist>
+                            <p class="form-hint" id="asset-tag-hint">Enter or comma adds a tag.</p>
+                        </div>
+                        <label class="field"><span>Folder</span><select id="asset-folder"></select></label>
+                        <div class="form-actions"><button class="primary-button" id="asset-save" type="submit">Save</button></div>
+                    </form>
+                </section>
+                <section class="panel" aria-labelledby="asset-meta-heading">
+                    <h2 id="asset-meta-heading">Details</h2>
+                    <dl class="server-info asset-meta-list" id="asset-meta"></dl>
+                </section>
+            </div>
+        </div>
     </div>
 
     <div id="page-settings" hidden>

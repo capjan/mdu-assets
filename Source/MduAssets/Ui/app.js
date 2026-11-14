@@ -1,8 +1,10 @@
 // MDU Asset Server web interface. Plain JavaScript on the JSON API, no build step (ADR-0007).
 // This module runs the project page and picks the page to show; the other pages live in pages.js.
 import {
-    $, api, announce, copyText, element, flashCopied, formatSize, numberFormat, dateFormat, plural, readSetting, request, writeSetting,
+    $, api, announce, copyText, element, flashCopied, folderOptions, folderPath, folderSubtree, folderTree, formatSize, numberFormat,
+    dateFormat, openDialog, plural, readSetting, request, send, writeSetting,
 } from "./common.js";
+import { showDetails } from "./details.js";
 import { showAccount, showAdmin, showNewProject, showSettings } from "./pages.js";
 
 const params = new URLSearchParams(location.search);
@@ -10,6 +12,21 @@ const state = {
     me: null,
     page: params.get("page") || "project",
     project: params.get("project"),
+    asset: params.get("asset"),
+    // "none" for images in no folder, a folder id, or null for all images of the project.
+    folder: params.get("folder"),
+    filters: {
+        q: params.get("q") ?? "",
+        tag: params.get("tag") ?? "",
+        type: params.get("type") ?? "",
+        uploader: params.get("uploader") ?? "",
+        from: params.get("from") ?? "",
+        to: params.get("to") ?? "",
+        subfolders: params.get("subfolders") === "true",
+    },
+    folders: [],
+    selected: new Set(),
+    focusId: null,
     projects: [],
     assets: [],
     next: null,
@@ -99,6 +116,13 @@ async function load() {
             break;
     }
 
+    if (project && state.asset) {
+        showPage("asset");
+        await loadFolders();
+        await showDetails(project, state.asset, { editable: canEdit(), onFolderChange: loadFolders });
+        return;
+    }
+
     showPage("project");
     if (!project) {
         $("project-title").textContent = state.project ? "Project not found" : "No projects yet";
@@ -108,13 +132,297 @@ async function load() {
         $("empty-state").textContent = state.project
             ? `There is no project '${state.project}', or you are not a member of it.`
             : me.canCreateProjects ? "Create a project to start uploading images." : "Ask an admin or a project owner to add you to a project.";
+        $("folder-bar").hidden = true;
+        $("search-form").hidden = true;
         return;
     }
+    await Promise.all([loadFolders(), loadFacets()]);
+    renderFilters();
     await loadAssets();
 }
 
+// Folders (ORG-01, ORG-02): a tree in the sidebar, the path above the images, actions for editors.
+const projectPath = () => `/projects/${encodeURIComponent(state.project)}`;
+const folderId = () => (state.folder && state.folder !== "none" ? Number(state.folder) : null);
+
+/** A link to the project page that keeps the current search and filters. */
+function pageLink({ folder = state.folder, filters = state.filters } = {}) {
+    const query = new URLSearchParams({ project: state.project });
+    if (folder) query.set("folder", folder);
+    for (const [key, value] of Object.entries(filters))
+        if (value && !(key === "subfolders" && !folder)) query.set(key, String(value));
+    return `/?${query}`;
+}
+
+async function loadFolders() {
+    state.folders = (await request(`${projectPath()}/folders`)).items;
+    if (folderId() && !state.folders.some((f) => f.id === folderId())) state.folder = null;
+    renderFolders();
+}
+
+function renderFolders() {
+    const editable = canEdit();
+    const link = (folder, label, count, depth = 0) => {
+        const value = folder === null ? null : String(folder);
+        const current = (state.folder ?? null) === value;
+        const anchor = element("a", {
+            class: "folder-link",
+            href: pageLink({ folder: value }),
+            "aria-current": current && !state.asset ? "page" : null,
+        }, [element("span", { class: "folder-name", text: label }), ...(count === null ? [] : [element("span", { class: "project-count", text: numberFormat.format(count) })])]);
+        // Set through the CSS object model: the content security policy blocks style attributes.
+        anchor.style.setProperty("--depth", String(depth));
+        if (editable && value !== null) makeDropTarget(anchor, value === "none" ? null : Number(value), label);
+        return element("li", {}, [anchor]);
+    };
+    $("folder-tree").replaceChildren(
+        link(null, "All images", null),
+        ...folderTree(state.folders).map((f) => link(f.id, f.name, f.assetCount, f.depth + 1)),
+        link("none", "Not in a folder", null));
+    $("folder-nav").hidden = false;
+
+    // The path: project, then each folder down to the current one.
+    const id = folderId();
+    const crumbs = [element("a", { href: pageLink({ folder: null }), text: "All images" })];
+    if (state.folder === "none") crumbs.push(element("span", { "aria-current": "page", text: "Not in a folder" }));
+    for (const folder of id ? folderPath(state.folders, id) : []) {
+        crumbs.push(folder.id === id
+            ? element("span", { "aria-current": "page", text: folder.name })
+            : element("a", { href: pageLink({ folder: String(folder.id) }), text: folder.name }));
+    }
+    $("folder-path").replaceChildren(element("ol", {}, crumbs.map((crumb) => element("li", {}, [crumb]))));
+
+    // On narrow screens the sidebar is hidden; a select offers the same folders.
+    const select = $("folder-select");
+    select.replaceChildren(
+        element("option", { value: "", text: "All images", selected: !state.folder }),
+        ...folderOptions(state.folders, { noneLabel: "Not in a folder", selected: id ?? "" }).slice(1),
+        element("option", { value: "none", text: "Not in a folder", selected: state.folder === "none" }));
+    select.onchange = () => { location.href = pageLink({ folder: select.value || null }); };
+
+    $("folder-actions").hidden = !editable;
+    for (const name of ["rename-folder", "move-folder", "delete-folder"]) $(name).hidden = !id;
+    $("filter-subfolders").closest(".checkbox").hidden = !id;
+}
+
+function folderNameField(value = "") {
+    const input = element("input", { type: "text", required: true, maxlength: "100", autocomplete: "off", value });
+    return [element("label", { class: "field" }, [element("span", { text: "Name" }), input]), input];
+}
+
+async function runFolderAction(action, message) {
+    try {
+        await action();
+        await loadFolders();
+        await loadAssets();
+        announce(message);
+    } catch (error) {
+        announce(error.message);
+        await openDialog({ title: "That did not work", text: error.message, confirmLabel: "OK" });
+    }
+}
+
+$("new-folder").addEventListener("click", async () => {
+    const [field, input] = folderNameField();
+    const parent = folderId();
+    const parentName = parent ? state.folders.find((f) => f.id === parent)?.name : null;
+    if (!await openDialog({ title: "New folder", text: parentName ? `Inside ${parentName}.` : "At the top level of the project.", fields: [field], confirmLabel: "Create folder" })) return;
+    await runFolderAction(async () => {
+        const folder = await send(`${projectPath()}/folders`, "POST", { name: input.value, parentId: parent });
+        history.replaceState(null, "", pageLink({ folder: String(folder.id) }));
+        state.folder = String(folder.id);
+    }, `Created the folder ${input.value.trim()}.`);
+});
+
+$("rename-folder").addEventListener("click", async () => {
+    const folder = state.folders.find((f) => f.id === folderId());
+    const [field, input] = folderNameField(folder.name);
+    if (!await openDialog({ title: `Rename ${folder.name}`, text: "Image links stay the same.", fields: [field], confirmLabel: "Rename" })) return;
+    await runFolderAction(() => send(`${projectPath()}/folders/${folder.id}`, "PATCH", { name: input.value }), `Renamed the folder to ${input.value.trim()}.`);
+});
+
+$("move-folder").addEventListener("click", async () => {
+    const folder = state.folders.find((f) => f.id === folderId());
+    const select = element("select", {}, folderOptions(state.folders, {
+        noneLabel: "Top level", selected: folder.parentId ?? "", exclude: folderSubtree(state.folders, folder.id),
+    }));
+    const field = element("label", { class: "field" }, [element("span", { text: "Move into" }), select]);
+    if (!await openDialog({ title: `Move ${folder.name}`, text: "Its images and subfolders move along; links stay the same.", fields: [field], confirmLabel: "Move" })) return;
+    await runFolderAction(() => send(`${projectPath()}/folders/${folder.id}/move`, "POST", { parentId: select.value ? Number(select.value) : null }),
+        `Moved the folder ${folder.name}.`);
+});
+
+$("delete-folder").addEventListener("click", async () => {
+    const folder = state.folders.find((f) => f.id === folderId());
+    const parent = state.folders.find((f) => f.id === folder.parentId);
+    const target = parent ? `the folder ${parent.name}` : "the top level";
+    if (!await openDialog({
+        title: `Delete ${folder.name}?`,
+        text: `Its images and subfolders move to ${target}. Nothing is deleted from the project, and links stay the same.`,
+        confirmLabel: "Delete folder", danger: true,
+    })) return;
+    await runFolderAction(async () => {
+        await send(`${projectPath()}/folders/${folder.id}`, "DELETE");
+        state.folder = folder.parentId ? String(folder.parentId) : null;
+        history.replaceState(null, "", pageLink());
+    }, `Deleted the folder ${folder.name}.`);
+});
+
+// Moving images: drag them onto a folder in the sidebar, or select them and use "Move to folder".
+const dragType = "application/x-mdu-assets";
+
+async function moveAssets(ids, target, targetName) {
+    try {
+        const result = await send(`${projectPath()}/assets/move`, "POST", { ids, folderId: target });
+        state.selected.clear();
+        await loadFolders();
+        await loadAssets();
+        announce(`Moved ${plural(result.moved, "image", "images")} to ${targetName}.`);
+    } catch (error) {
+        announce(error.message);
+    }
+}
+
+function makeDropTarget(anchor, target, name) {
+    anchor.addEventListener("dragover", (event) => {
+        if (![...event.dataTransfer.types].includes(dragType)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        anchor.classList.add("is-drop-target");
+    });
+    anchor.addEventListener("dragleave", () => anchor.classList.remove("is-drop-target"));
+    anchor.addEventListener("drop", (event) => {
+        if (![...event.dataTransfer.types].includes(dragType)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        anchor.classList.remove("is-drop-target");
+        moveAssets(JSON.parse(event.dataTransfer.getData(dragType)), target, name);
+    });
+}
+
+function dragAssets(event, asset) {
+    const ids = state.selected.has(asset.id) ? [...state.selected] : [asset.id];
+    event.dataTransfer.setData(dragType, JSON.stringify(ids));
+    event.dataTransfer.setData("text/uri-list", asset.url);
+    event.dataTransfer.effectAllowed = "copyMove";
+}
+
+$("move-selected").addEventListener("click", async () => {
+    const select = element("select", {}, folderOptions(state.folders, { noneLabel: "Not in a folder", selected: folderId() ?? "" }));
+    const field = element("label", { class: "field" }, [element("span", { text: "Folder" }), select]);
+    const count = state.selected.size;
+    if (!await openDialog({ title: `Move ${plural(count, "image", "images")}`, text: "Links stay the same.", fields: [field], confirmLabel: "Move" })) return;
+    const target = select.value ? Number(select.value) : null;
+    await moveAssets([...state.selected], target, target ? select.selectedOptions[0].textContent.trim() : "no folder");
+});
+
+$("clear-selection").addEventListener("click", () => {
+    state.selected.clear();
+    renderAssets();
+    announce("Selection cleared.");
+});
+
+function toggleSelected(asset) {
+    if (state.selected.has(asset.id)) state.selected.delete(asset.id); else state.selected.add(asset.id);
+    renderAssets();
+    announce(`${state.selected.has(asset.id) ? "Selected" : "Deselected"} ${asset.fileName}. ${plural(state.selected.size, "image", "images")} selected.`);
+}
+
+// Search and filters (ORG-04) live in the address, so a filtered view can be shared or bookmarked.
+async function loadFacets() {
+    state.facets = await request(`${projectPath()}/facets`);
+}
+
+const typeLabels = { "image/png": "PNG", "image/jpeg": "JPEG", "image/gif": "GIF", "image/webp": "WebP", "image/avif": "AVIF", "image/bmp": "BMP", "image/svg+xml": "SVG" };
+const typeKey = (contentType) => ({ "image/svg+xml": "svg", "image/jpeg": "jpeg" })[contentType] ?? contentType.replace("image/", "");
+
+function renderFilters() {
+    const { filters, facets } = state;
+    const options = (select, first, values) => select.replaceChildren(
+        element("option", { value: "", text: first }),
+        ...values.map(([value, label]) => element("option", { value, text: label })));
+    options($("filter-tag"), "Any tag", facets.tags.map((t) => [t.name, `${t.name} (${numberFormat.format(t.count)})`]));
+    options($("filter-type"), "Any type", facets.types.map((t) => [typeKey(t), typeLabels[t] ?? t]));
+    options($("filter-uploader"), "Anyone", facets.uploaders.map((u) => [u, u]));
+    $("search-input").value = filters.q;
+    $("filter-tag").value = filters.tag;
+    $("filter-type").value = filters.type;
+    $("filter-uploader").value = filters.uploader;
+    $("filter-from").value = filters.from;
+    $("filter-to").value = filters.to;
+    $("filter-subfolders").checked = filters.subfolders;
+    const active = ["tag", "type", "uploader", "from", "to"].filter((key) => filters[key]).length + (filters.subfolders && folderId() ? 1 : 0);
+    $("filter-count").textContent = active ? ` (${active})` : "";
+    if (active) $("filters").open = true;
+}
+
+const filtered = () => Boolean(state.filters.q || state.filters.tag || state.filters.type || state.filters.uploader || state.filters.from || state.filters.to);
+
+async function applyFilters() {
+    state.filters = {
+        q: $("search-input").value.trim(),
+        tag: $("filter-tag").value,
+        type: $("filter-type").value,
+        uploader: $("filter-uploader").value,
+        from: $("filter-from").value,
+        to: $("filter-to").value,
+        subfolders: $("filter-subfolders").checked,
+    };
+    history.replaceState(null, "", pageLink());
+    renderFilters();
+    state.selected.clear();
+    await loadAssets();
+    announce(state.assets.length || !filtered() ? `${plural(state.assets.length, "image", "images")}${state.next ? " or more" : ""} found.` : "No images match.");
+}
+
+/** A public link or an asset id pasted into the search opens that image (LNK-09). */
+const looksLikeLink = (text) => /\/i\/[A-Za-z0-9]{10}(?:[/?#]|$)/.test(text);
+
+async function openLink(text) {
+    try {
+        const asset = await request(`/lookup?url=${encodeURIComponent(text)}`);
+        location.href = `/?project=${encodeURIComponent(asset.project)}&asset=${encodeURIComponent(asset.id)}`;
+    } catch (error) {
+        announce(error.status === 404 ? "That image does not exist, or you cannot see its project." : error.message);
+        await openDialog({
+            title: "Image not found",
+            text: error.status === 404 ? "That image does not exist, or you are not a member of its project." : error.message,
+            confirmLabel: "OK",
+        });
+    }
+}
+
+$("search-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = $("search-input").value.trim();
+    if (looksLikeLink(text)) openLink(text); else applyFilters();
+});
+$("search-input").addEventListener("paste", (event) => {
+    const text = event.clipboardData?.getData("text")?.trim() ?? "";
+    if (looksLikeLink(text)) {
+        event.preventDefault();
+        $("search-input").value = text;
+        openLink(text);
+    }
+});
+for (const id of ["filter-tag", "filter-type", "filter-uploader", "filter-from", "filter-to", "filter-subfolders"])
+    $(id).addEventListener("change", () => applyFilters());
+$("clear-filters").addEventListener("click", () => {
+    for (const id of ["search-input", "filter-tag", "filter-type", "filter-uploader", "filter-from", "filter-to"]) $(id).value = "";
+    $("filter-subfolders").checked = false;
+    applyFilters();
+    $("search-input").focus();
+});
+
 // The list comes in pages, newest first; "Show more images" loads the next one.
-const assetsPath = (after) => `/projects/${encodeURIComponent(state.project)}/assets?limit=200${after ? `&after=${encodeURIComponent(after)}` : ""}`;
+function assetsPath(after) {
+    const query = new URLSearchParams({ limit: "200" });
+    if (after) query.set("after", after);
+    if (state.folder) query.set("folder", state.folder);
+    if (state.folder && state.folder !== "none" && state.filters.subfolders) query.set("subfolders", "true");
+    for (const key of ["q", "tag", "type", "uploader", "from", "to"]) if (state.filters[key]) query.set(key, state.filters[key]);
+    return `${projectPath()}/assets?${query}`;
+}
 
 async function loadAssets() {
     const list = await request(assetsPath());
@@ -182,46 +490,125 @@ function sortedAssets() {
     return direction === "descending" ? sorted.reverse() : sorted;
 }
 
+const detailsLink = (asset) => `/?project=${encodeURIComponent(state.project)}&asset=${encodeURIComponent(asset.id)}`;
+
 function renderAssets() {
     const assets = sortedAssets();
+    const editable = canEdit();
     $("empty-state").hidden = assets.length > 0;
+    if (!assets.length)
+        $("empty-state").textContent = filtered() ? "No images match the search and filters."
+            : state.folder ? "This folder has no images." : editable ? "No images yet. Drop, paste or upload one." : "No images yet.";
     $("load-more").hidden = !state.next;
+
+    // Selected images that are no longer listed (after a search or move) drop out of the selection.
+    for (const id of state.selected) if (!assets.some((a) => a.id === id)) state.selected.delete(id);
+    $("selection-bar").hidden = state.selected.size === 0;
+    $("selection-count").textContent = `${plural(state.selected.size, "image", "images")} selected`;
+    $("move-selected").hidden = !editable;
 
     const grid = state.view === "grid";
     $("asset-grid").hidden = !grid;
+    $("keyboard-hint").hidden = !grid || assets.length === 0;
     $("asset-table-wrapper").hidden = grid || assets.length === 0;
     $("view-grid").setAttribute("aria-pressed", String(grid));
     $("view-list").setAttribute("aria-pressed", String(!grid));
 
+    // One image is in the tab order; the arrow keys move between images (roving tabindex).
+    if (!assets.some((a) => a.id === state.focusId)) state.focusId = assets[0]?.id ?? null;
+    const hadFocus = document.activeElement?.closest?.("#asset-grid, #asset-rows") !== null;
+
+    const checkbox = (asset) => {
+        const box = element("input", {
+            class: "asset-select", type: "checkbox", tabindex: "-1", checked: state.selected.has(asset.id), "aria-label": `Select ${asset.fileName}`,
+        });
+        box.addEventListener("change", () => toggleSelected(asset));
+        return box;
+    };
+    const draggable = (link, asset) => {
+        if (!editable) return link;
+        link.setAttribute("draggable", "true");
+        link.addEventListener("dragstart", (event) => dragAssets(event, asset));
+        return link;
+    };
+
     if (grid) {
-        $("asset-grid").replaceChildren(...assets.map((asset) => element("li", {}, [element("button", {
-            class: "asset-card",
-            type: "button",
-            "aria-label": `${asset.fileName}, ${formatDimensions(asset)}, ${formatSize(asset.size)}. Show snippets.`,
-            onclick: () => showSnippet(asset),
-        }, [
-            element("span", { class: "asset-thumb" }, [element("img", { src: asset.url, alt: "", loading: "lazy", decoding: "async" })]),
-            element("span", { class: "asset-meta" }, [
-                element("span", { class: "asset-name", text: asset.fileName, title: asset.fileName }),
-                element("span", { class: "asset-detail", text: `${formatDimensions(asset)} · ${formatSize(asset.size)}` }),
-            ]),
-        ])])));
+        $("asset-grid").replaceChildren(...assets.map((asset) => {
+            const selected = state.selected.has(asset.id);
+            const link = draggable(element("a", {
+                class: "asset-card",
+                href: detailsLink(asset),
+                tabindex: asset.id === state.focusId ? "0" : "-1",
+                "data-id": asset.id,
+                "aria-label": `${asset.fileName}, ${formatDimensions(asset)}, ${formatSize(asset.size)}${selected ? ", selected" : ""}`,
+            }, [
+                element("span", { class: "asset-thumb" }, [element("img", { src: asset.url, alt: "", loading: "lazy", decoding: "async", draggable: "false" })]),
+                element("span", { class: "asset-meta" }, [
+                    element("span", { class: "asset-name", text: asset.fileName, title: asset.fileName }),
+                    element("span", { class: "asset-detail", text: `${formatDimensions(asset)} · ${formatSize(asset.size)}` }),
+                ]),
+            ]), asset);
+            return element("li", { class: `asset-item${selected ? " is-selected" : ""}` }, [link, checkbox(asset)]);
+        }));
+        if (hadFocus) $("asset-grid").querySelector(`[data-id="${state.focusId}"]`)?.focus({ preventScroll: true });
     } else {
-        for (const header of document.querySelectorAll("#asset-table th")) {
+        for (const header of document.querySelectorAll("#asset-table th[aria-sort]")) {
             const key = header.querySelector("button").dataset.sort;
             header.setAttribute("aria-sort", key === state.sort.key ? state.sort.direction : "none");
         }
-        $("asset-rows").replaceChildren(...assets.map((asset) => element("tr", {}, [
-            element("td", {}, [element("button", { class: "row-button", type: "button", onclick: () => showSnippet(asset) }, [
-                element("img", { src: asset.url, alt: "", loading: "lazy", decoding: "async" }),
+        $("asset-rows").replaceChildren(...assets.map((asset) => {
+            const box = checkbox(asset);
+            box.removeAttribute("tabindex");
+            const link = draggable(element("a", { class: "row-button", href: detailsLink(asset), "data-id": asset.id }, [
+                element("img", { src: asset.url, alt: "", loading: "lazy", decoding: "async", draggable: "false" }),
                 element("span", { text: asset.fileName }),
-            ])]),
-            element("td", { text: formatDimensions(asset) }),
-            element("td", { text: formatSize(asset.size) }),
-            element("td", { text: dateFormat.format(new Date(asset.createdAt)) }),
-        ])));
+            ]), asset);
+            return element("tr", { class: state.selected.has(asset.id) ? "is-selected" : "" }, [
+                element("td", { class: "select-column" }, [box]),
+                element("td", {}, [link]),
+                element("td", { text: formatDimensions(asset) }),
+                element("td", { text: formatSize(asset.size) }),
+                element("td", { text: dateFormat.format(new Date(asset.createdAt)) }),
+            ]);
+        }));
     }
 }
+
+// Keyboard in the grid (ORG-07): arrows move, Enter opens (a link), C copies the Markdown, Space selects.
+$("asset-grid").addEventListener("keydown", async (event) => {
+    const link = event.target.closest?.(".asset-card");
+    if (!link || event.altKey || event.ctrlKey || event.metaKey) return;
+    const cards = [...$("asset-grid").querySelectorAll(".asset-card")];
+    const index = cards.indexOf(link);
+    const asset = state.assets.find((a) => a.id === link.dataset.id);
+
+    const columns = Math.max(1, cards.filter((card) => card.offsetTop === cards[0].offsetTop).length);
+    const target = {
+        ArrowRight: index + 1, ArrowLeft: index - 1, ArrowDown: index + columns, ArrowUp: index - columns,
+        Home: 0, End: cards.length - 1,
+    }[event.key];
+    if (target !== undefined) {
+        event.preventDefault();
+        const next = cards[Math.min(cards.length - 1, Math.max(0, target))];
+        link.tabIndex = -1;
+        next.tabIndex = 0;
+        state.focusId = next.dataset.id;
+        next.focus();
+        return;
+    }
+    if (event.key === " ") {
+        event.preventDefault();
+        toggleSelected(asset);
+    } else if (event.key.toLowerCase() === "c" && !event.shiftKey) {
+        event.preventDefault();
+        const ok = await copyText(asset.markdown);
+        announce(ok ? `Copied the Markdown snippet of ${asset.fileName}.` : "Copying failed. Open the image to copy its snippet.");
+    }
+});
+$("asset-grid").addEventListener("focusin", (event) => {
+    const link = event.target.closest?.(".asset-card");
+    if (link) state.focusId = link.dataset.id;
+});
 
 $("view-grid").addEventListener("click", () => { state.view = "grid"; writeSetting("mdu-assets-view", "grid"); renderAssets(); });
 $("view-list").addEventListener("click", () => { state.view = "list"; writeSetting("mdu-assets-view", "list"); renderAssets(); });
@@ -360,19 +747,6 @@ function createCard(title) {
     return card;
 }
 
-function showSnippet(asset) {
-    const existing = state.cards.get(asset.id);
-    if (existing) {
-        $("snippet-list").prepend(existing.item);
-        existing.copyButton?.focus();
-    } else {
-        const card = createCard(asset.fileName);
-        card.fill(asset);
-        card.copyButton.focus();
-    }
-    $("snippets").scrollIntoView({ block: "nearest" });
-}
-
 function replaceAsset(asset) {
     const index = state.assets.findIndex((a) => a.id === asset.id);
     if (index >= 0) state.assets[index] = asset; else state.assets.unshift(asset);
@@ -414,7 +788,9 @@ function upload(file, name, alt) {
     const card = createCard(name);
     return new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
-        xhr.open("POST", `${api}/projects/${encodeURIComponent(state.project)}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}`);
+        // Uploads land in the folder that is open.
+        const folder = folderId() ? `&folder=${folderId()}` : "";
+        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${folder}`);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.setRequestHeader("Accept", "application/json");
         xhr.responseType = "json";
@@ -475,6 +851,7 @@ async function refreshProjectCounts() {
     try {
         state.projects = (await request("/projects")).items;
         renderProjects();
+        await loadFolders();
     } catch { }
 }
 
@@ -513,7 +890,12 @@ document.addEventListener("dragleave", (event) => {
     dragDepth = Math.max(0, dragDepth - 1);
     if (dragDepth === 0) dropZone.hidden = true;
 });
+// A dragged image that is dropped next to a folder must not make the browser open its link.
+document.addEventListener("dragover", (event) => {
+    if ([...(event.dataTransfer?.types ?? [])].includes(dragType)) event.preventDefault();
+});
 document.addEventListener("drop", (event) => {
+    if ([...(event.dataTransfer?.types ?? [])].includes(dragType)) { event.preventDefault(); return; }
     if (!hasFiles(event)) return;
     event.preventDefault();
     dragDepth = 0;

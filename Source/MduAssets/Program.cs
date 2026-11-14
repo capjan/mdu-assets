@@ -56,6 +56,7 @@ builder.Services.AddSingleton(database);
 builder.Services.AddSingleton<BlobStore>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<AssetStore>();
+builder.Services.AddSingleton<FolderStore>();
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddSingleton<ProjectAccess>();
@@ -97,6 +98,7 @@ app.MapMethods("/i/{id}/{**name}", ["GET", "HEAD"], PublicLinks.Serve).RequireHo
 var api = app.MapGroup("/api/v1").RequireHost(settings.UiHost).RequireAuthorization();
 var admin = api.MapGroup("").RequireAuthorization(policy => policy.RequireRole(BasicAuthenticationHandler.AdminRole));
 AssetEndpoints.Map(api);
+FolderEndpoints.Map(api);
 ProjectEndpoints.Map(api);
 UserEndpoints.Map(api, admin);
 

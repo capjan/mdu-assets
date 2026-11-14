@@ -9,6 +9,7 @@ namespace MduAssets.Api;
 /// <summary>
 /// <c>POST /api/v1/projects/{project}/assets</c>: accepts one image as <c>multipart/form-data</c> (field <c>file</c>,
 /// optional <c>name</c> and <c>alt</c>) or as the raw request body with <c>?name=</c> and <c>?alt=</c> (API-04).
+/// <c>?folder=</c> puts it into a folder.
 /// </summary>
 public static class UploadEndpoint
 {
@@ -20,11 +21,22 @@ public static class UploadEndpoint
         AssetStore assets,
         BlobStore blobs,
         ProjectAccess access,
+        FolderStore folders,
         ServerSettings settings,
         CancellationToken cancellationToken)
     {
         if (!access.TryGet(context.User, project, ProjectRole.Editor, out var target, out var problem))
             return problem;
+
+        // ?folder=<id> files the upload into a folder of the project (ORG-01).
+        long? folderId = null;
+        if (context.Request.Query["folder"].ToString() is { Length: > 0 } folderText)
+        {
+            if (!long.TryParse(folderText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id) ||
+                folders.Find(target.Id, id) is null)
+                return FolderEndpoints.UnknownFolder(id);
+            folderId = id;
+        }
 
         var limit = settings.Options.MaxUploadBytes;
         if (context.Request.ContentLength > limit + MultipartOverhead)
@@ -81,7 +93,7 @@ public static class UploadEndpoint
         var altText = string.IsNullOrWhiteSpace(alt) ? FileNames.SuggestAltText(name) : alt.Trim();
         var userId = context.User.Id();
 
-        var asset = assets.Create(new NewAsset(target.Id, fileName, altText, blob.Hash, info.ContentType, blob.Size, info.Width, info.Height, userId));
+        var asset = assets.Create(new NewAsset(target.Id, folderId, fileName, altText, blob.Hash, info.ContentType, blob.Size, info.Width, info.Height, userId));
         var response = AssetResponse.From(asset, settings);
         return TypedResults.Created(response.Url, response);
     }
