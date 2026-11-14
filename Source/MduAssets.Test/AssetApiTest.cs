@@ -28,7 +28,7 @@ public sealed class AssetApiTest : IDisposable
     {
         var me = await _server.Ui().GetFromJsonAsync<MeResponse>("/api/v1/me", Json, TestContext.Current.CancellationToken);
 
-        Assert.Equal(new MeResponse(TestServer.AdminName, IsAdmin: true), me);
+        Assert.Equal(new MeResponse(TestServer.AdminName, IsAdmin: true, MustChangePassword: false, CanCreateProjects: true), me);
     }
 
     [Fact]

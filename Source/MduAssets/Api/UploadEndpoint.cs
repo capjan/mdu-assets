@@ -1,5 +1,5 @@
-using System.Security.Claims;
 using MduAssets.Imaging;
+using MduAssets.Security;
 using MduAssets.Storage;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -19,12 +19,12 @@ public static class UploadEndpoint
         HttpContext context,
         AssetStore assets,
         BlobStore blobs,
+        ProjectAccess access,
         ServerSettings settings,
         CancellationToken cancellationToken)
     {
-        var target = assets.FindProject(project);
-        if (target is null)
-            return AssetEndpoints.UnknownProject(project);
+        if (!access.TryGet(context.User, project, ProjectRole.Editor, out var target, out var problem))
+            return problem;
 
         var limit = settings.Options.MaxUploadBytes;
         if (context.Request.ContentLength > limit + MultipartOverhead)
@@ -79,7 +79,7 @@ public static class UploadEndpoint
         var blob = await blobs.PutAsync(new MemoryStream(content, writable: false), cancellationToken);
         var fileName = FileNames.Normalize(name, info.Extension);
         var altText = string.IsNullOrWhiteSpace(alt) ? FileNames.SuggestAltText(name) : alt.Trim();
-        var userId = long.Parse(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!, System.Globalization.CultureInfo.InvariantCulture);
+        var userId = context.User.Id();
 
         var asset = assets.Create(new NewAsset(target.Id, fileName, altText, blob.Hash, info.ContentType, blob.Size, info.Width, info.Height, userId));
         var response = AssetResponse.From(asset, settings);

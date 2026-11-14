@@ -2,11 +2,10 @@ using Microsoft.Data.Sqlite;
 
 namespace MduAssets.Storage;
 
-public sealed record Project(long Id, string Slug, string Name);
-
 /// <summary>The current version of an asset, as needed to serve it.</summary>
 public sealed record AssetFile(
     string Id,
+    long ProjectId,
     string FileName,
     string AltText,
     int Version,
@@ -28,19 +27,9 @@ public sealed record NewAsset(
     int? Height,
     long CreatedBy);
 
-/// <summary>Reads and writes projects and assets.</summary>
+/// <summary>Reads and writes assets.</summary>
 public sealed class AssetStore(Database database)
 {
-    public Project? FindProject(string slug)
-    {
-        using var connection = database.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, slug, name FROM projects WHERE slug = $slug;";
-        command.Parameters.AddWithValue("$slug", slug);
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2)) : null;
-    }
-
     /// <summary>
     /// Creates an asset with version 1. A new random id is drawn until it is free; ids are never reused,
     /// because deleted assets keep their row.
@@ -90,7 +79,7 @@ public sealed class AssetStore(Database database)
                 }
 
                 transaction.Commit();
-                return new AssetFile(id, asset.FileName, asset.AltText, 1, asset.BlobSha256, asset.ContentType,
+                return new AssetFile(id, asset.ProjectId, asset.FileName, asset.AltText, 1, asset.BlobSha256, asset.ContentType,
                     asset.Size, asset.Width, asset.Height, Clock.Parse(now));
             }
             catch (SqliteException exception) when (exception.SqliteExtendedErrorCode == 1555 && attempt < 5) // SQLITE_CONSTRAINT_PRIMARYKEY
@@ -98,26 +87,6 @@ public sealed class AssetStore(Database database)
                 transaction.Rollback();
             }
         }
-    }
-
-    /// <summary>All projects with the number and total size of their assets, ordered by name.</summary>
-    public IReadOnlyList<ProjectSummary> ListProjects()
-    {
-        using var connection = database.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT p.slug, p.name, count(a.id), coalesce(sum(v.size), 0)
-            FROM projects p
-            LEFT JOIN assets a ON a.project_id = p.id
-            LEFT JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
-            GROUP BY p.id
-            ORDER BY p.name COLLATE NOCASE;
-            """;
-        using var reader = command.ExecuteReader();
-        var projects = new List<ProjectSummary>();
-        while (reader.Read())
-            projects.Add(new ProjectSummary(reader.GetString(0), reader.GetString(1), reader.GetInt32(2), reader.GetInt64(3)));
-        return projects;
     }
 
     /// <summary>
@@ -182,19 +151,27 @@ public sealed class AssetStore(Database database)
         return FindCurrent(id);
     }
 
+    /// <summary>Bytes on disk for all versions; versions with the same content share one blob and count once.</summary>
+    public long StorageUsed()
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT coalesce(sum(size), 0) FROM (SELECT DISTINCT blob_sha256, size FROM asset_versions);";
+        return (long)command.ExecuteScalar()!;
+    }
+
     private const string SelectCurrent = """
-        SELECT a.id, a.file_name, a.alt_text, v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, v.created_at
+        SELECT a.id, a.project_id, a.file_name, a.alt_text, v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, v.created_at
         FROM assets a
         JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
         """;
 
     private static AssetFile ReadAsset(SqliteDataReader reader) =>
         new(
-            reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetString(4),
-            reader.GetString(5), reader.GetInt64(6),
-            reader.IsDBNull(7) ? null : reader.GetInt32(7),
+            reader.GetString(0), reader.GetInt64(1), reader.GetString(2), reader.GetString(3), reader.GetInt32(4), reader.GetString(5),
+            reader.GetString(6), reader.GetInt64(7),
             reader.IsDBNull(8) ? null : reader.GetInt32(8),
-            Clock.Parse(reader.GetString(9)));
+            reader.IsDBNull(9) ? null : reader.GetInt32(9),
+            Clock.Parse(reader.GetString(10)));
 }
 
-public sealed record ProjectSummary(string Slug, string Name, int AssetCount, long TotalSize);
