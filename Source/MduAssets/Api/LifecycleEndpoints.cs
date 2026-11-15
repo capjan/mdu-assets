@@ -13,7 +13,7 @@ public static class LifecycleEndpoints
     public static void Map(RouteGroupBuilder api)
     {
         api.MapGet("/assets/{id}/versions", Versions);
-        api.MapPost("/assets/{id}/versions", AddVersion);
+        api.MapPost("/assets/{id}/versions", AddVersion).RequireRateLimiting(UploadLimits.Policy);
         api.MapPost("/assets/{id}/versions/{number:int}/restore", RestoreVersion);
         api.MapDelete("/assets/{id}/versions/{number:int}", DeleteVersion);
         api.MapDelete("/assets/{id}", Trash);
@@ -64,12 +64,14 @@ public static class LifecycleEndpoints
         if (problem is not null)
             return problem;
 
-        var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, cancellationToken);
+        var project = projects.FindById(asset!.ProjectId)!;
+        var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, cancellationToken, project.MaxFileBytes);
         if (receiveProblem is not null)
             return receiveProblem;
+        if (Quotas.Check(project, projects, image!.Blob.Size, image.Blob.Hash, cleanup) is { } quotaProblem)
+            return quotaProblem;
 
-        var project = projects.FindById(asset!.ProjectId)!;
-        var removed = assets.AddVersion(asset.Id, new NewVersion(image!.Blob.Hash, image.Info.ContentType, image.Blob.Size,
+        var removed = assets.AddVersion(asset.Id, new NewVersion(image.Blob.Hash, image.Info.ContentType, image.Blob.Size,
             image.Info.Width, image.Info.Height, image.Animated, context.User.Id()), project.MaxVersions);
         cleanup.Collect(removed);
 

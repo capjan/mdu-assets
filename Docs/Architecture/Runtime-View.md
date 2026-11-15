@@ -32,7 +32,7 @@ sequenceDiagram
 The upload answers as soon as the original, its metadata and the thumbnail are stored. The AVIF variant follows in the background ([ADR-0011](Architecture-Decisions/0011-AVIF-in-the-Background.md)).
 
 > [!NOTE]
-> Since M5 the sequence runs as shown, except the quota check and the audit entry, which arrive in M9.
+> Since M9 the sequence runs as shown.
 
 ## First sign-in with a start password
 

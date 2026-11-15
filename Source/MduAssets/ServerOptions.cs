@@ -52,6 +52,21 @@ public sealed class ServerOptions
     public string BotUserAgents { get; set; } =
         "bot,crawl,spider,slurp,facebookexternalhit,preview,embedly,headless,lighthouse,pingdom,uptime,monitor,python-requests,wget";
 
+    /// <summary>Failed sign-ins per user name and per address within 15 minutes before further tries are refused (AUTH-08).</summary>
+    public int SignInFailures { get; set; } = 10;
+
+    /// <summary>Uploads and new versions per user and minute (OPS-05).</summary>
+    public int UploadsPerMinute { get; set; } = 60;
+
+    /// <summary>404 answers on public links per address and minute before further requests get 429 (OPS-05).</summary>
+    public int PublicNotFoundPerMinute { get; set; } = 100;
+
+    /// <summary>Days audit log entries are kept (OPS-03).</summary>
+    public int AuditRetentionDays { get; set; } = 365;
+
+    /// <summary>Largest project export accepted for import, in bytes (OPS-06).</summary>
+    public long MaxImportBytes { get; set; } = 2L * 1024 * 1024 * 1024;
+
     /// <summary>How long deleted assets stay in the trash before they are deleted for good, in days (DEL-02).</summary>
     public int TrashRetentionDays { get; set; } = 30;
 

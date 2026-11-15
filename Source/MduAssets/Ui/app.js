@@ -531,6 +531,11 @@ function renderProjects() {
     $("upload-button").hidden = !editable;
     $("toolbar-hint").hidden = !editable;
     $("viewer-notice").hidden = !project || editable;
+    // The quota warning from 90 % on (OPS-02).
+    const share = project?.quotaBytes ? project.usedBytes / project.quotaBytes : 0;
+    $("quota-notice").hidden = !editable || share < 0.9;
+    if (share >= 0.9)
+        $("quota-notice").textContent = `This project uses ${Math.round(share * 100)} % of its storage quota (${formatSize(project.usedBytes)} of ${formatSize(project.quotaBytes)}). Delete old versions or empty the trash, or ask an admin for more space.`;
     $("empty-state").textContent = editable ? "No images yet. Drop, paste or upload one." : "No images yet.";
     const settings = $("settings-link");
     settings.hidden = project?.role !== "owner";

@@ -29,7 +29,9 @@ public static class ProjectRoles
     };
 }
 
-public sealed record Project(long Id, string Slug, string Name, string Description, bool ConvertFormats = true, int? MaxVersions = null);
+public sealed record Project(
+    long Id, string Slug, string Name, string Description, bool ConvertFormats = true, int? MaxVersions = null,
+    long? MaxFileBytes = null, long? QuotaBytes = null);
 
 /// <summary>A project with its usage and the role of the user who asked; <c>Role</c> is <c>null</c> when an admin is no member.</summary>
 public sealed record ProjectSummary(
@@ -42,7 +44,10 @@ public sealed record ProjectSummary(
     ProjectRole? Role,
     bool ConvertFormats = true,
     int TrashCount = 0,
-    int? MaxVersions = null);
+    int? MaxVersions = null,
+    long UsedBytes = 0,
+    long? QuotaBytes = null,
+    long? MaxFileBytes = null);
 
 public sealed record Member(string UserName, ProjectRole Role, bool IsLocked);
 
@@ -56,20 +61,22 @@ public sealed class ProjectStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, slug, name, description, convert_formats, max_versions FROM projects WHERE slug = $slug;";
+        command.CommandText = "SELECT id, slug, name, description, convert_formats, max_versions, max_file_bytes, quota_bytes FROM projects WHERE slug = $slug;";
         command.Parameters.AddWithValue("$slug", slug);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5)) : null;
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
+            reader.IsDBNull(6) ? null : reader.GetInt64(6), reader.IsDBNull(7) ? null : reader.GetInt64(7)) : null;
     }
 
     public Project? FindById(long id)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, slug, name, description, convert_formats, max_versions FROM projects WHERE id = $id;";
+        command.CommandText = "SELECT id, slug, name, description, convert_formats, max_versions, max_file_bytes, quota_bytes FROM projects WHERE id = $id;";
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5)) : null;
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
+            reader.IsDBNull(6) ? null : reader.GetInt64(6), reader.IsDBNull(7) ? null : reader.GetInt64(7)) : null;
     }
 
     /// <summary>
@@ -89,7 +96,10 @@ public sealed class ProjectStore(Database database)
                    (SELECT max(a.created_at) FROM assets a WHERE a.project_id = p.id AND a.deleted_at IS NULL),
                    m.role, p.convert_formats,
                    (SELECT count(*) FROM assets a WHERE a.project_id = p.id AND a.deleted_at IS NOT NULL AND a.purged_at IS NULL),
-                   p.max_versions
+                   p.max_versions,
+                   (SELECT coalesce(sum(v.size), 0) FROM assets a JOIN asset_versions v ON v.asset_id = a.id
+                    WHERE a.project_id = p.id AND a.purged_at IS NULL),
+                   p.quota_bytes, p.max_file_bytes
             FROM projects p
             {(all ? "LEFT JOIN" : "JOIN")} memberships m ON m.project_id = p.id AND m.user_id = $user
             {(projectId is null ? "" : "WHERE p.id = $project")}
@@ -105,8 +115,25 @@ public sealed class ProjectStore(Database database)
                 reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetInt64(4),
                 reader.IsDBNull(5) ? null : Clock.Parse(reader.GetString(5)),
                 reader.IsDBNull(6) ? null : ProjectRoles.Parse(reader.GetString(6)), reader.GetBoolean(7), reader.GetInt32(8),
-                reader.IsDBNull(9) ? null : reader.GetInt32(9)));
+                reader.IsDBNull(9) ? null : reader.GetInt32(9), reader.GetInt64(10),
+                reader.IsDBNull(11) ? null : reader.GetInt64(11), reader.IsDBNull(12) ? null : reader.GetInt64(12)));
         return projects;
+    }
+
+    /// <summary>
+    /// Bytes a project uses against its quota (OPS-02): every version of every asset, also old versions and the trash. Variants
+    /// do not count; a blob shared by two versions counts twice, because each could be deleted alone.
+    /// </summary>
+    public long UsedBytes(long projectId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT coalesce(sum(v.size), 0) FROM assets a JOIN asset_versions v ON v.asset_id = a.id
+            WHERE a.project_id = $project AND a.purged_at IS NULL;
+            """;
+        command.Parameters.AddWithValue("$project", projectId);
+        return (long)command.ExecuteScalar()!;
     }
 
     /// <summary>Creates a project with its creator as owner (PRJ-01).</summary>
@@ -142,18 +169,21 @@ public sealed class ProjectStore(Database database)
 
     /// <summary>Changes name and description. The slug and all asset links stay the same (PRJ-04).</summary>
     /// <returns>The changed project, or <c>null</c> when it was deleted meanwhile.</returns>
-    public Project? Update(long id, string name, string description, bool convertFormats, int? maxVersions)
+    public Project? Update(long id, string name, string description, bool convertFormats, int? maxVersions, long? maxFileBytes, long? quotaBytes)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE projects SET name = $name, description = $description, convert_formats = $convert, max_versions = $maxVersions WHERE id = $id RETURNING id, slug, name, description, convert_formats, max_versions;";
+        command.CommandText = "UPDATE projects SET name = $name, description = $description, convert_formats = $convert, max_versions = $maxVersions, max_file_bytes = $maxFile, quota_bytes = $quota WHERE id = $id RETURNING id, slug, name, description, convert_formats, max_versions, max_file_bytes, quota_bytes;";
+        command.Parameters.AddWithValue("$maxFile", (object?)maxFileBytes ?? DBNull.Value);
+        command.Parameters.AddWithValue("$quota", (object?)quotaBytes ?? DBNull.Value);
         command.Parameters.AddWithValue("$convert", convertFormats);
         command.Parameters.AddWithValue("$maxVersions", (object?)maxVersions ?? DBNull.Value);
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$name", name);
         command.Parameters.AddWithValue("$description", description);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5)) : null;
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
+            reader.IsDBNull(6) ? null : reader.GetInt64(6), reader.IsDBNull(7) ? null : reader.GetInt64(7)) : null;
     }
 
     /// <summary>

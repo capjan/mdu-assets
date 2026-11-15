@@ -68,6 +68,7 @@
                 <button class="secondary-button" id="delete-folder" type="button" hidden>Delete folder</button>
             </div>
         </div>
+        <p class="notice notice-warning" id="quota-notice" hidden></p>
         <p class="notice" id="viewer-notice" hidden>You can view and copy snippets in this project. Ask an owner for the editor role to upload or change images.</p>
 
         <div class="toolbar" id="project-toolbar">
@@ -261,6 +262,10 @@
                 <label class="checkbox"><input id="details-convert" type="checkbox"> Deliver WebP and AVIF copies when they are smaller</label>
                 <label class="field"><span>Versions to keep</span><input id="details-max-versions" type="number" min="0" max="1000" step="1" inputmode="numeric" aria-describedby="details-max-versions-hint"></label>
                 <p class="form-hint" id="details-max-versions-hint">0 or empty keeps every version. Older versions beyond the number are deleted when an image is replaced.</p>
+                <label class="field"><span>Largest upload (MB)</span><input id="details-max-file" type="number" min="0" step="0.1" inputmode="decimal" aria-describedby="details-max-file-hint"></label>
+                <p class="form-hint" id="details-max-file-hint"></p>
+                <label class="field"><span>Storage quota (MB)</span><input id="details-quota" type="number" min="0" step="0.1" inputmode="decimal" aria-describedby="details-quota-hint"></label>
+                <p class="form-hint" id="details-quota-hint"></p>
                 <p class="form-hint">The short name and all image links stay the same when you rename the project.</p>
                 <div class="form-actions"><button class="primary-button" type="submit">Save</button></div>
             </form>
@@ -284,6 +289,21 @@
             </form>
         </section>
 
+        <section class="panel" aria-labelledby="export-heading">
+            <h2 id="export-heading">Export</h2>
+            <p class="form-hint">A zip with the images and their names, alt texts, tags, folders and pairs, to import into another MDU Asset Server. The trash stays out.</p>
+            <div class="form-actions">
+                <a class="secondary-button" id="export-current" href="#" download>Export current versions</a>
+                <a class="secondary-button" id="export-all" href="#" download>Export all versions</a>
+            </div>
+        </section>
+
+        <section class="panel" aria-labelledby="activity-heading">
+            <h2 id="activity-heading">Activity</h2>
+            <ol class="audit-list" id="activity-list"></ol>
+            <div class="form-actions"><button class="secondary-button" id="activity-more" type="button" hidden>Show older</button></div>
+        </section>
+
         <section class="panel panel-danger" aria-labelledby="delete-heading">
             <h2 id="delete-heading">Delete project</h2>
             <p class="form-hint" id="delete-hint"></p>
@@ -305,6 +325,16 @@
                 <label class="field"><span>Description</span><input id="new-project-description" type="text" maxlength="500" autocomplete="off"></label>
                 <div class="form-actions"><button class="primary-button" type="submit">Create project</button></div>
             </form>
+        </section>
+        <section class="panel" aria-labelledby="import-heading">
+            <h2 id="import-heading">Import an export</h2>
+            <p class="form-hint">Creates a project from a zip exported by an MDU Asset Server. Image links keep their ids where this server has not used them; the others get new ids, listed after the import.</p>
+            <form class="form" id="import-form">
+                <label class="field"><span>Export file</span><input id="import-file" type="file" accept=".zip,application/zip" required></label>
+                <label class="field"><span>Short name of the new project</span><input id="import-slug" type="text" required maxlength="64" autocomplete="off" spellcheck="false" pattern="[a-z0-9](?:[a-z0-9\-]{0,62}[a-z0-9])?"></label>
+                <div class="form-actions"><button class="primary-button" type="submit">Import project</button></div>
+            </form>
+            <div class="notice" id="import-result" hidden tabindex="-1"></div>
         </section>
     </div>
 
@@ -402,6 +432,13 @@
             <label class="checkbox"><input id="setting-create-projects" type="checkbox"> All users may create projects</label>
             <p class="form-hint">When off, only admins create projects. Whoever creates a project becomes its owner.</p>
             <dl class="server-info" id="server-info"></dl>
+        </section>
+
+        <section class="panel" aria-labelledby="audit-heading">
+            <h2 id="audit-heading">Audit log</h2>
+            <p class="form-hint">Sign-ins and every change made through the web interface or the API, kept for the configured time.</p>
+            <ol class="audit-list" id="audit-list"></ol>
+            <div class="form-actions"><button class="secondary-button" id="audit-more" type="button" hidden>Show older</button></div>
         </section>
     </div>
     </main>

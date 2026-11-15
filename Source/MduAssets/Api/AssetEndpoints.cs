@@ -30,7 +30,7 @@ public static class AssetEndpoints
     public static void Map(RouteGroupBuilder api)
     {
         api.MapGet("/projects/{project}/assets", List);
-        api.MapPost("/projects/{project}/assets", UploadEndpoint.Handle);
+        api.MapPost("/projects/{project}/assets", UploadEndpoint.Handle).RequireRateLimiting(UploadLimits.Policy);
         api.MapPost("/projects/{project}/assets/move", Move);
         api.MapGet("/projects/{project}/facets", Facets);
         api.MapGet("/assets/{id}", Get);

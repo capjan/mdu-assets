@@ -58,8 +58,8 @@ The table sketch is in section 8 of the [requirements](../Requirements.md#8-date
 | Uploads | Type from content, not from the name; size and pixel limits before decoding; SVG sanitized on upload; served with `nosniff` and, for SVG, a sandboxing CSP; served only from the public host. |
 | Privacy | EXIF and GPS removed from images; statistics keep counts, times and referrer pages only, no IP addresses or user agents; no cookies on the public host. |
 | Public link check | `POST /api/v1/public/check` answers without signing in for up to 100 links with `ok`, `trash`, `deleted`, `unknown` or `invalid` and nothing else (API-06); limited to 60 requests per minute and client address. |
-| Abuse | Rate limits for sign-in, uploads, the public check endpoint and 404s; quotas per project. |
-| Audit | Security-relevant and content-changing actions are written to the audit log. |
+| Abuse | Failed sign-ins: after 10 within 15 minutes per user name or per address (`MDU_ASSETS_SIGNINFAILURES`), further tries get 429 with `Retry-After` and no password prompt, before any password is checked (AUTH-08). Uploads, new versions and imports: 60 per minute and user (`MDU_ASSETS_UPLOADSPERMINUTE`). Public check: 60 per minute and address. Public links: after 100 answers 404 per minute and address (`MDU_ASSETS_PUBLICNOTFOUNDPERMINUTE`), 429 for a minute, so ids cannot be guessed. Counters are kept in memory. Sizes: the upload limit of the instance, lower per project if owners want (OPS-01); a storage quota per project set by admins, counting every version and the trash but no variants, with a warning in the interface from 90 % (OPS-02). |
+| Audit | `AuditLog` records every successful change through the API in one place (uploads, versions, moves, renames, metadata, trash, members, tokens, users, settings, imports) and the authentication handler records sign-ins (when a password is really checked, not from the cache) and failed sign-ins: time, user, project, action, target, details and client address (OPS-03). Admins see everything, owners the log of their project without addresses. Entries are kept 365 days (`MDU_ASSETS_AUDITRETENTIONDAYS`). |
 
 ## Persistence
 

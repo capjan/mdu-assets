@@ -199,7 +199,7 @@ public sealed class VersionsAndTrashTest : IDisposable
         var asset = await Upload(SampleImages.Png(200, 100), "old.png");
         await _admin.DeleteAsync($"/api/v1/assets/{asset.Id}", Cancel);
         var services = _server.Services;
-        TrashCleanup At(TimeSpan later) => new(services.GetRequiredService<AssetStore>(), services.GetRequiredService<BlobCleanup>(),
+        TrashCleanup At(TimeSpan later) => new(services.GetRequiredService<AssetStore>(), services.GetRequiredService<BlobCleanup>(), services.GetRequiredService<AuditStore>(),
             services.GetRequiredService<ServerSettings>(), new ShiftedTime(later), NullLogger<TrashCleanup>.Instance);
 
         Assert.Equal(0, At(TimeSpan.FromDays(29)).RunOnce());

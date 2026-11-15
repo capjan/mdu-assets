@@ -46,6 +46,13 @@ public sealed record AssetVersion(int Number, string BlobSha256, string ContentT
 /// <summary>The content of a new version.</summary>
 public sealed record NewVersion(string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, long CreatedBy);
 
+/// <summary>An asset read from a project export, with its blobs already stored on this instance.</summary>
+public sealed record ImportedAsset(
+    long ProjectId, long? FolderId, string FileName, string AltText, string Description, IReadOnlyList<string> Tags,
+    int CurrentVersion, IReadOnlyList<ImportedVersion> Versions, long ImportedBy, DateTimeOffset CreatedAt);
+
+public sealed record ImportedVersion(int Number, string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, DateTimeOffset CreatedAt);
+
 /// <summary>An asset in the trash, for the trash list (DEL-02).</summary>
 public sealed record TrashedAsset(AssetFile Asset, DateTimeOffset DeletedAt, string? DeletedBy);
 
@@ -511,6 +518,58 @@ public sealed class AssetStore(Database database)
 
         transaction.Commit();
         return blobs;
+    }
+
+    /// <summary>
+    /// Inserts an asset from a project export with all its versions (OPS-06). It keeps <paramref name="preferredId"/> when that id
+    /// was never used on this instance, otherwise it gets a new one ([ADR-0018](Architecture-Decisions/0018-Import-Id-Collisions.md)).
+    /// Returns the id the asset has now.
+    /// </summary>
+    public string Import(string preferredId, ImportedAsset asset)
+    {
+        using var connection = database.Open();
+        for (var attempt = 0; ; attempt++)
+        {
+            var id = attempt == 0 && AssetId.IsValid(preferredId) ? preferredId : AssetId.New();
+            using var transaction = connection.BeginTransaction();
+            using (var check = connection.CreateCommand())
+            {
+                check.Transaction = transaction;
+                check.CommandText = "SELECT 1 FROM assets WHERE id = $id UNION ALL SELECT 1 FROM retired_asset_ids WHERE id = $id;";
+                check.Parameters.AddWithValue("$id", id);
+                if (check.ExecuteScalar() is not null)
+                    continue;
+            }
+
+            void Execute(string sql, params (string Name, object? Value)[] parameters)
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = sql;
+                foreach (var (name, value) in parameters)
+                    command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+                command.ExecuteNonQuery();
+            }
+
+            Execute("""
+                INSERT INTO assets (id, project_id, folder_id, file_name, alt_text, description, current_version, created_by, created_at)
+                VALUES ($id, $project, $folder, $fileName, $alt, $description, $current, $user, $createdAt);
+                """,
+                ("$id", id), ("$project", asset.ProjectId), ("$folder", asset.FolderId), ("$fileName", asset.FileName), ("$alt", asset.AltText),
+                ("$description", asset.Description), ("$current", asset.CurrentVersion), ("$user", asset.ImportedBy), ("$createdAt", Clock.Format(asset.CreatedAt)));
+            foreach (var version in asset.Versions)
+                Execute("""
+                    INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at)
+                    VALUES ($id, $number, $blob, $type, $size, $width, $height, $animated, $user, $createdAt);
+                    """,
+                    ("$id", id), ("$number", version.Number), ("$blob", version.BlobSha256), ("$type", version.ContentType), ("$size", version.Size),
+                    ("$width", version.Width), ("$height", version.Height), ("$animated", version.Animated), ("$user", asset.ImportedBy),
+                    ("$createdAt", Clock.Format(version.CreatedAt)));
+            foreach (var tag in asset.Tags)
+                Execute("INSERT OR IGNORE INTO tags (asset_id, key, name) VALUES ($id, $key, $name);", ("$id", id), ("$key", TagKey(tag)), ("$name", tag));
+            transaction.Commit();
+            return id;
+        }
     }
 
     /// <summary>Whether any version still refers to a blob; unused blobs and their variants can go.</summary>

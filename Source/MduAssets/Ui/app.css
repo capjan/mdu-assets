@@ -1067,6 +1067,26 @@ kbd {
 
 .referrer { overflow-wrap: anywhere; }
 
+/* Audit log and import (M9) */
+.audit-list { display: grid; gap: 0.35rem; margin: 0; padding: 0; list-style: none; font-size: 0.875rem; }
+
+.audit-entry { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 0 0.75rem; padding: 0.35rem 0; border-top: 1px solid var(--border-subtle); }
+
+.audit-entry:first-child { border-top: 0; }
+
+.audit-time { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.audit-text { overflow-wrap: anywhere; }
+
+.audit-details { grid-column: 2; color: var(--text-secondary); font-size: 0.8125rem; overflow-wrap: anywhere; }
+
+#import-result ul { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+
+@media (max-width: 760px) {
+    .audit-entry { grid-template-columns: minmax(0, 1fr); }
+    .audit-details { grid-column: 1; }
+}
+
 /* Drop zone over the whole window while files are dragged. */
 .drop-zone {
     position: fixed;

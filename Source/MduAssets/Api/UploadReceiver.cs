@@ -19,9 +19,10 @@ public static class UploadReceiver
     private const int MultipartOverhead = 64 * 1024;
 
     public static async Task<(ReceivedImage? Image, ProblemHttpResult? Problem)> ReceiveAsync(
-        HttpContext context, ServerSettings settings, ImageJobs jobs, BlobStore blobs, CancellationToken cancellationToken)
+        HttpContext context, ServerSettings settings, ImageJobs jobs, BlobStore blobs, CancellationToken cancellationToken, long? projectLimit = null)
     {
-        var limit = settings.Options.MaxUploadBytes;
+        // A project may set a lower limit than the instance (OPS-01).
+        var limit = projectLimit is { } lower ? Math.Min(lower, settings.Options.MaxUploadBytes) : settings.Options.MaxUploadBytes;
         if (context.Request.ContentLength > limit + MultipartOverhead)
             return (null, TooLarge(limit));
         if (context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } bodySize)

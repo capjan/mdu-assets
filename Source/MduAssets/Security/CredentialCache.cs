@@ -16,12 +16,17 @@ public sealed class CredentialCache(TimeProvider time)
 
     private readonly ConcurrentDictionary<string, DateTimeOffset> _verified = new(StringComparer.Ordinal);
 
-    public bool Verify(long userId, string storedHash, string password)
+    public bool Verify(long userId, string storedHash, string password) => Verify(userId, storedHash, password, out _);
+
+    /// <param name="checkedNow"><c>true</c> when the password was checked now rather than taken from the cache: a real sign-in.</param>
+    public bool Verify(long userId, string storedHash, string password, out bool checkedNow)
     {
         var key = Key(userId, storedHash, password);
         var now = time.GetUtcNow();
+        checkedNow = false;
         if (_verified.TryGetValue(key, out var expires) && expires > now)
             return true;
+        checkedNow = true;
 
         if (!PasswordHasher.Verify(password, storedHash))
             return false;

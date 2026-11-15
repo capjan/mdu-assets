@@ -20,6 +20,8 @@ public static class UploadEndpoint
         FolderStore folders,
         ImageJobs jobs,
         Variants variants,
+        ProjectStore projects,
+        Maintenance.BlobCleanup cleanup,
         ServerSettings settings,
         CancellationToken cancellationToken)
     {
@@ -32,10 +34,12 @@ public static class UploadEndpoint
         if (folder.Problem is { } folderProblem)
             return folderProblem;
 
-        var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, cancellationToken);
+        var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, cancellationToken, target.MaxFileBytes);
         if (receiveProblem is not null)
             return receiveProblem;
         var (blob, info) = (image!.Blob, image.Info);
+        if (Quotas.Check(target, projects, blob.Size, blob.Hash, cleanup) is { } quotaProblem)
+            return quotaProblem;
 
         if (context.Request.Query["duplicates"] == "reject" && assets.FindByContent(target.Id, blob.Hash) is { } existingId)
         {
