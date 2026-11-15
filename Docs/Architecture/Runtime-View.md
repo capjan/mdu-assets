@@ -21,15 +21,16 @@ sequenceDiagram
     API->>API: Check role, size limit, quota
     API->>Img: Detect type, strip metadata, read size
     Img-->>API: Cleaned bytes, 1600x900
-    API->>Store: Write blob, asset, version 1, audit entry
+    API->>Img: Encode as WebP
+    Img-->>API: Smaller lossless WebP
+    API->>Store: Write WebP and original blobs, asset, version 1, audit entry
     API->>Img: Create thumbnail
-    API->>Jobs: Queue AVIF variant
     API-->>-UI: 201 id, url, markdown
     UI->>UI: Copy Markdown to the clipboard
     UI-->>Author: Snippet shown and copied
 ```
 
-The upload answers as soon as the original, its metadata and the thumbnail are stored. The AVIF variant follows in the background ([ADR-0011](Architecture-Decisions/0011-AVIF-in-the-Background.md)).
+The upload answers as soon as the image in its chosen format, the kept original and the thumbnail are stored; the snippet already carries the `.webp` name ([ADR-0019](Architecture-Decisions/0019-Format-Chosen-on-Upload.md)).
 
 > [!NOTE]
 > Since M9 the sequence runs as shown.
@@ -90,21 +91,20 @@ The file name in the URL is ignored for the lookup, so old links still work afte
 
 1. An editor drops a new file on the asset details.
 2. The image pipeline cleans it as on upload; storage writes a new blob and version 2 and points the asset at it.
-3. Variants of version 1 stay for its version link ([ADR-0016](Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md)); version 2 gets its own preview at once, its AVIF copy in the background, and widths on demand. With a version limit set for the project, versions beyond it are deleted for good, and blobs no version uses any more go with their variants.
+3. Variants of version 1 stay for its version link ([ADR-0016](Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md)); version 2 is converted like an upload, gets its own preview at once and widths on demand; if its format differs, the asset gets the new extension. With a version limit set for the project, versions beyond it are deleted for good, and blobs no version uses any more go with their variants.
 4. The public link serves version 2 once the readers' caches expire (`max-age=300`). Version 1 stays reachable under `/i/<id>/v1/<name>` and can be restored as version 3.
 
 ## Background work
 
 ```mermaid
 stateDiagram-v2
-    accTitle: Lifecycle of a converted variant
-    [*] --> Queued: upload or first request
-    Queued --> Running: worker free
+    accTitle: Lifecycle of a variant
+    [*] --> Running: upload or first request
     Running --> Ready: encoded and stored
-    Running --> Failed: error
-    Failed --> Queued: retry with backoff
-    Ready --> Dropped: new version or deletion
+    Running --> Failed: error, the original is served
+    Failed --> Running: next request
+    Ready --> Dropped: version or blob deleted
     Dropped --> [*]
 ```
 
-A bounded in-process queue with a fixed number of workers runs AVIF encoding, the final deletion of trashed assets after the retention period and the cleanup of old audit entries. On restart, missing variants are queued again when requested.
+Background services delete trashed assets after the retention period, clean up old audit entries and write request statistics. Image work runs in the request that needs it, bounded by `ImageJobs`; missing variants are made again when requested.

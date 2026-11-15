@@ -49,7 +49,7 @@ public static class BackupCommand
         {
             connection.Open();
             using var command = connection.CreateCommand();
-            command.CommandText = "SELECT DISTINCT blob_sha256 FROM asset_versions;";
+            command.CommandText = "SELECT blob_sha256 FROM asset_versions UNION SELECT original_sha256 FROM asset_versions WHERE original_sha256 IS NOT NULL;";
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {

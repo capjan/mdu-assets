@@ -6,20 +6,32 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace MduAssets.Api;
 
-/// <summary>An image received, checked, cleaned and stored as a blob, with the name and alt text that came with it.</summary>
-public sealed record ReceivedImage(StoredBlob Blob, ImageInfo Info, bool Animated, string? Name, string? Alt);
+/// <summary>
+/// An image received, checked, cleaned and stored as a blob, with the name and alt text that came with it. When it was converted
+/// to WebP (UP-11), <c>Original</c> is the cleaned upload, kept but never served.
+/// </summary>
+public sealed record ReceivedImage(StoredBlob Blob, ImageInfo Info, bool Animated, string? Name, string? Alt, VersionOriginal? Original = null)
+{
+    /// <summary>Bytes the image adds to its project, with the kept original.</summary>
+    public long Size => Blob.Size + (Original?.Size ?? 0);
+
+    /// <summary>The blobs stored for this image, to remove again when it is refused after all.</summary>
+    public IEnumerable<string> Blobs => Original is null ? [Blob.Hash] : [Blob.Hash, Original.BlobSha256];
+}
 
 /// <summary>
 /// Reads one image from a request, as <c>multipart/form-data</c> (field <c>file</c>, optional <c>name</c> and <c>alt</c>) or
 /// as the raw body with <c>?name=</c> and <c>?alt=</c> (API-04). Checks the type from the content (UP-06), the size and pixel
-/// limits, sanitizes SVG (UP-07), removes metadata (UP-08) and stores the blob. Shared by uploads and new versions.
+/// limits, sanitizes SVG (UP-07), removes metadata (UP-08), picks the format to serve when <c>convert</c> is set (UP-11) and
+/// stores the blobs. Shared by uploads and new versions.
 /// </summary>
 public static class UploadReceiver
 {
     private const int MultipartOverhead = 64 * 1024;
 
     public static async Task<(ReceivedImage? Image, ProblemHttpResult? Problem)> ReceiveAsync(
-        HttpContext context, ServerSettings settings, ImageJobs jobs, BlobStore blobs, CancellationToken cancellationToken, long? projectLimit = null)
+        HttpContext context, ServerSettings settings, ImageJobs jobs, BlobStore blobs, bool convert, CancellationToken cancellationToken,
+        long? projectLimit = null)
     {
         // A project may set a lower limit than the instance (OPS-01).
         var limit = projectLimit is { } lower ? Math.Min(lower, settings.Options.MaxUploadBytes) : settings.Options.MaxUploadBytes;
@@ -67,19 +79,32 @@ public static class UploadReceiver
                 $"The image has {info.Width} × {info.Height} pixels; at most {settings.Options.MaxPixels:N0} pixels are allowed."));
 
         // Metadata such as EXIF and GPS never reaches the store; the orientation is applied first (UP-08).
+        // Then the format to serve is decided once (UP-11): WebP when it is smaller, from the upload itself, so a photo is
+        // compressed only once.
         PreparedImage prepared;
+        EncodedImage? webp = null;
         try
         {
             var detected = (Content: content, Info: info);
             prepared = await jobs.RunAsync(() => ImageProcessor.Prepare(detected.Content, detected.Info), cancellationToken);
+            if (convert)
+            {
+                var source = (Animated: prepared.Animated, Size: (long)prepared.Content.Length);
+                webp = await jobs.RunAsync(() => ImageProcessor.ToWebP(detected.Content, detected.Info, source.Animated, source.Size), cancellationToken);
+            }
         }
         catch (ImageDecodeException exception)
         {
             return (null, Problem(StatusCodes.Status422UnprocessableEntity, "Unreadable image", exception.Message));
         }
 
-        var blob = await blobs.PutAsync(new MemoryStream(prepared.Content, writable: false), cancellationToken);
-        return (new ReceivedImage(blob, prepared.Info, prepared.Animated, name, alt), null);
+        var cleaned = await blobs.PutAsync(new MemoryStream(prepared.Content, writable: false), cancellationToken);
+        if (webp is null)
+            return (new ReceivedImage(cleaned, prepared.Info, prepared.Animated, name, alt), null);
+
+        var served = await blobs.PutAsync(new MemoryStream(webp.Content, writable: false), cancellationToken);
+        var original = new VersionOriginal(cleaned.Hash, prepared.Info.ContentType, cleaned.Size);
+        return (new ReceivedImage(served, prepared.Info with { Format = ImageFormat.WebP }, prepared.Animated, name, alt, original), null);
     }
 
     private static async Task<(byte[] Data, string? Name, string? Alt)> ReadForm(HttpRequest request, long limit, CancellationToken cancellationToken)

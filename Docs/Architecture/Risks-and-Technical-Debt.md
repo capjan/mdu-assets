@@ -17,7 +17,7 @@ description: Known risks, open questions and technical debt of the MDU Asset Ser
 | Request counts too low | Browser and CDN caches hide requests | Short `max-age`; the UI explains the limits. |
 | No password prompt in some browsers | Basic Auth depends on the browser's own prompt; some embedded browsers show none and cannot open the web interface | Documented in the [deployment guide](../Deployment.md#sign-in); session sign-in (AUTH-09) removes it. Consider moving it before 1.0 |
 | Referrers mostly origin only | Browsers send only the origin for cross-site image requests | Accepted in [ADR-0017](Architecture-Decisions/0017-Referrer-Policy-for-MDU-Pages.md); the interface explains it |
-| AVIF encoding cost | About one second per image, high memory use | Background queue with bounded workers. |
+| Encoding cost on upload | WebP takes about a fifth of a second per image, large lossless images longer; the upload waits for it | Bounded `ImageJobs`; AVIF is no longer encoded ([ADR-0019](Architecture-Decisions/0019-Format-Chosen-on-Upload.md)). |
 | SQLite write contention | Slow statistics or uploads under load | Batched statistics writes, WAL mode; sufficient for the planned team size. |
 
 ## Open questions

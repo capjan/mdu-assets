@@ -20,14 +20,17 @@ echo "$response"
 url=$(printf '%s' "$response" | sed -n 's/.*"url":"\([^"]*\)".*/\1/p')
 case "$url" in "$public"/i/*) ;; *) echo "unexpected link: $url" >&2; exit 1 ;; esac
 
+# libvips in the program folder: the upload is stored as lossless WebP, with the PNG kept as its original.
+case "$url" in *.webp) ;; *) echo "expected a .webp link: $url" >&2; exit 1 ;; esac
+printf '%s' "$response" | grep -q '"originalContentType":"image/png"'
 curl -sf -o /dev/null -w 'public link: %{http_code} %{content_type}\n' "$url"
-cmp <(curl -sf "$url") "$png"
+test "$(curl -sf -o /dev/null -w '%{content_type}' -H 'Accept: image/png' "$url")" = image/webp
 
-# libvips in the program folder: the preview and a smaller width are made on demand.
+# The preview and a smaller width are made by libvips, too.
 id=$(printf '%s' "$response" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
 curl -sf -u "$user:$password" -o /dev/null -w 'preview: %{http_code} %{content_type}\n' "$ui/api/v1/assets/$id/thumbnail"
 test "$(curl -sf -u "$user:$password" -o /dev/null -w '%{content_type}' "$ui/api/v1/assets/$id/thumbnail")" = image/webp
-curl -sf -o /dev/null -w 'width 320: %{http_code} %{content_type}\n' -H 'Accept: image/webp' "$url?w=320"
+curl -sf -o /dev/null -w 'width 320: %{http_code} %{content_type}\n' "$url?w=320"
 status=$(curl -s -o /dev/null -w '%{http_code}' -u "$user:wrong-password" --data-binary "@$png" "$ui/api/v1/projects/default/assets")
 test "$status" = 401
 echo "smoke test passed"

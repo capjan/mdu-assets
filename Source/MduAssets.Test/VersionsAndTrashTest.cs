@@ -19,7 +19,7 @@ public sealed class VersionsAndTrashTest : IDisposable
     private static readonly string EditorHash = PasswordHasher.Hash("editor-password");
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    private readonly TestServer _server = new();
+    private readonly TestServer _server = new TestServer().KeepUploadedFormats();
     private readonly HttpClient _admin;
 
     public VersionsAndTrashTest()
@@ -94,8 +94,9 @@ public sealed class VersionsAndTrashTest : IDisposable
 
         Assert.True(added.FormatChanged);
         Assert.Equal("image/png", added.PreviousContentType);
-        Assert.Equal("diagram.png", added.Asset.FileName);
+        Assert.Equal("diagram.jpg", added.Asset.FileName);
         Assert.Equal("image/jpeg", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(HttpStatusCode.OK, (await _server.Public().GetAsync(added.Asset.Url, Cancel)).StatusCode);
     }
 
     [Fact]

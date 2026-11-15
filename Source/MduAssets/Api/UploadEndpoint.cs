@@ -34,15 +34,16 @@ public static class UploadEndpoint
         if (folder.Problem is { } folderProblem)
             return folderProblem;
 
-        var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, cancellationToken, target.MaxFileBytes);
+        var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, target.ConvertFormats, cancellationToken, target.MaxFileBytes);
         if (receiveProblem is not null)
             return receiveProblem;
         var (blob, info) = (image!.Blob, image.Info);
-        if (Quotas.Check(target, projects, blob.Size, blob.Hash, cleanup) is { } quotaProblem)
+        if (Quotas.Check(target, projects, image.Size, image.Blobs, cleanup) is { } quotaProblem)
             return quotaProblem;
 
         if (context.Request.Query["duplicates"] == "reject" && assets.FindByContent(target.Id, blob.Hash) is { } existingId)
         {
+            cleanup.Collect(image.Blobs);
             var existing = AssetResponse.From(assets.FindCurrent(existingId)!, settings);
             return TypedResults.Conflict(new DuplicateResponse("Already uploaded",
                 $"This image is already in the project as {existing.FileName}.", existing));
@@ -51,12 +52,10 @@ public static class UploadEndpoint
         var fileName = FileNames.Normalize(image.Name, info.Extension);
         var altText = string.IsNullOrWhiteSpace(image.Alt) ? FileNames.SuggestAltText(image.Name) : image.Alt.Trim();
         var asset = assets.Create(new NewAsset(target.Id, folder.Id, fileName, altText, blob.Hash, info.ContentType, blob.Size,
-            info.Width, info.Height, context.User.Id(), image.Animated));
+            info.Width, info.Height, context.User.Id(), image.Animated, image.Original));
 
-        // The preview is ready when the interface shows the upload (DLV-06); the AVIF copy follows in the background.
+        // The preview is ready when the interface shows the upload (DLV-06).
         await variants.ThumbnailAsync(blob.Hash, cancellationToken);
-        if (target.ConvertFormats)
-            variants.PrepareAvif(blob.Hash, info.ContentType, image.Animated);
         var response = AssetResponse.From(asset, settings);
         return TypedResults.Created(response.Url, response);
     }

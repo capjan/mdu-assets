@@ -16,7 +16,7 @@ public sealed class ApiForToolsTest : IDisposable
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    private readonly TestServer _server = new();
+    private readonly TestServer _server = new TestServer().KeepUploadedFormats();
     private readonly HttpClient _admin;
 
     public ApiForToolsTest()

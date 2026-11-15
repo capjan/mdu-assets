@@ -17,7 +17,7 @@ public sealed class OrganizeTest : IDisposable
     private static readonly string ViewerHash = PasswordHasher.Hash("viewer-password");
     private static CancellationToken Cancel => TestContext.Current.CancellationToken;
 
-    private readonly TestServer _server = new();
+    private readonly TestServer _server = new TestServer().KeepUploadedFormats();
     private readonly HttpClient _admin;
 
     public OrganizeTest()

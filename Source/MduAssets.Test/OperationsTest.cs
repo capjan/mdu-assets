@@ -30,7 +30,7 @@ public sealed class OperationsTest : IDisposable
     {
         var server = new TestServer(settings);
         _servers.Add(server);
-        return server;
+        return server.KeepUploadedFormats();
     }
 
     private static ByteArrayContent Png(int width, int height = 50)

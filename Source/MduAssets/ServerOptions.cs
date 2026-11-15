@@ -70,6 +70,4 @@ public sealed class ServerOptions
     /// <summary>How long deleted assets stay in the trash before they are deleted for good, in days (DEL-02).</summary>
     public int TrashRetentionDays { get; set; } = 30;
 
-    /// <summary>How many background workers encode AVIF copies (DLV-04). AVIF takes about a second per image.</summary>
-    public int AvifWorkers { get; set; } = 1;
 }

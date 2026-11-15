@@ -151,6 +151,9 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
         const path = folders.find((folder) => folder.id === asset.folderId);
         const meta = [
             ["Type", typeNames[asset.contentType] ?? asset.contentType],
+            ...(asset.originalContentType
+                ? [["Uploaded as", `${typeNames[asset.originalContentType] ?? asset.originalContentType}, ${formatSize(asset.originalSize)} (kept, not public)`]]
+                : []),
             ["Dimensions", asset.width && asset.height ? `${asset.width} × ${asset.height} pixels` : "–"],
             ["Size", formatSize(asset.size)],
             ["Folder", path?.name ?? "Not in a folder"],
@@ -299,6 +302,7 @@ function setUpLifecycle(project, { canEdit, editable, owner, get, render }) {
                 version.width && version.height ? `${version.width} × ${version.height}` : null,
                 formatSize(version.size),
                 typeNames[version.contentType] ?? version.contentType,
+                version.originalContentType ? `from ${typeNames[version.originalContentType] ?? version.originalContentType}` : null,
             ].filter(Boolean).join(" · ");
             return element("li", { class: `version${version.isCurrent ? " is-current" : ""}` }, [
                 element("img", { src: `${version.url}?w=320`, alt: "", loading: "lazy" }),
@@ -340,7 +344,7 @@ function setUpLifecycle(project, { canEdit, editable, owner, get, render }) {
             if (result.formatChanged) {
                 const from = typeNames[result.previousContentType] ?? result.previousContentType;
                 const to = typeNames[result.asset.contentType] ?? result.asset.contentType;
-                hint.textContent = `The new version is ${to} instead of ${from}. The link keeps its old file name ${result.asset.fileName}; browsers and MDU go by the content, so it still works.`;
+                hint.textContent = `The new version is ${to} instead of ${from}, so the file name is now ${result.asset.fileName}. Links with the old name keep working; copy the new snippet for new pages.`;
                 hint.focus();
             }
             announce(`Version ${result.asset.version} is now behind the same link.`);

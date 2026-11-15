@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using MduAssets.Images;
+using MduAssets.Imaging;
 using MduAssets.Maintenance;
 using MduAssets.Security;
 using MduAssets.Storage;
@@ -48,13 +49,14 @@ public static class LifecycleEndpoints
         if (problem is not null)
             return problem;
         return TypedResults.Ok(new VersionList(assets.Versions(asset!.Id).Select(v => new VersionResponse(
-            v.Number, settings.PublicLink(asset.Id, asset.FileName, v.Number), v.ContentType, v.Size, v.Width, v.Height,
-            v.CreatedBy, v.CreatedAt, v.Number == asset.Version)).ToList()));
+            v.Number, settings.PublicLink(asset.Id, FileNameFor(asset, v.ContentType) ?? asset.FileName, v.Number), v.ContentType, v.Size,
+            v.Width, v.Height, v.CreatedBy, v.CreatedAt, v.Number == asset.Version, v.Original?.ContentType, v.Original?.Size)).ToList()));
     }
 
     /// <summary>
-    /// Replaces the image under the same link (VER-01). The format may change; the name in the link stays as it was and the
-    /// answer says so (VER-02). Old versions stay reachable under their version links until they are deleted.
+    /// Replaces the image under the same link (VER-01). The format may change, also by the conversion after upload (UP-11); then
+    /// the file name gets the new extension and the answer says so (VER-02). Links with the old name keep working, because only
+    /// the id counts. Old versions stay reachable under their version links until they are deleted.
     /// </summary>
     private static async Task<Results<Created<VersionAdded>, ProblemHttpResult>> AddVersion(
         string id, HttpContext context, ProjectAccess access, AssetStore assets, ProjectStore projects, BlobStore blobs,
@@ -65,19 +67,18 @@ public static class LifecycleEndpoints
             return problem;
 
         var project = projects.FindById(asset!.ProjectId)!;
-        var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, cancellationToken, project.MaxFileBytes);
+        var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, project.ConvertFormats, cancellationToken, project.MaxFileBytes);
         if (receiveProblem is not null)
             return receiveProblem;
-        if (Quotas.Check(project, projects, image!.Blob.Size, image.Blob.Hash, cleanup) is { } quotaProblem)
+        if (Quotas.Check(project, projects, image!.Size, image.Blobs, cleanup) is { } quotaProblem)
             return quotaProblem;
 
         var removed = assets.AddVersion(asset.Id, new NewVersion(image.Blob.Hash, image.Info.ContentType, image.Blob.Size,
-            image.Info.Width, image.Info.Height, image.Animated, context.User.Id()), project.MaxVersions);
+            image.Info.Width, image.Info.Height, image.Animated, context.User.Id(), image.Original), project.MaxVersions,
+            FileNameFor(asset, image.Info.ContentType));
         cleanup.Collect(removed);
 
         await variants.ThumbnailAsync(image.Blob.Hash, cancellationToken);
-        if (project.ConvertFormats)
-            variants.PrepareAvif(image.Blob.Hash, image.Info.ContentType, image.Animated);
 
         var updated = AssetResponse.From(assets.FindCurrent(asset.Id)!, settings);
         return TypedResults.Created(updated.VersionUrl, new VersionAdded(updated, asset.ContentType != updated.ContentType, asset.ContentType));
@@ -98,7 +99,7 @@ public static class LifecycleEndpoints
 
         var project = projects.FindById(asset.ProjectId)!;
         cleanup.Collect(assets.AddVersion(asset.Id, new NewVersion(version.BlobSha256, version.ContentType, version.Size, version.Width,
-            version.Height, version.Animated, user.Id()), project.MaxVersions));
+            version.Height, version.Animated, user.Id(), version.Original), project.MaxVersions, FileNameFor(asset, version.ContentType)));
         return TypedResults.Ok(AssetResponse.From(assets.FindCurrent(asset.Id)!, settings));
     }
 
@@ -112,9 +113,10 @@ public static class LifecycleEndpoints
         if (number == asset!.Version)
             return TypedResults.Problem("The current version cannot be deleted; move the image to the trash instead.",
                 statusCode: StatusCodes.Status409Conflict, title: "Current version");
-        if (assets.DeleteVersion(asset.Id, number) is not { } blob)
+        var blobs = assets.DeleteVersion(asset.Id, number);
+        if (blobs.Count == 0)
             return UnknownVersion(number);
-        cleanup.Collect([blob]);
+        cleanup.Collect(blobs);
         return TypedResults.NoContent();
     }
 
@@ -175,6 +177,15 @@ public static class LifecycleEndpoints
             return ProjectAccess.UnknownAsset(id);
         cleanup.Collect(assets.Purge(asset.Id));
         return TypedResults.NoContent();
+    }
+
+    /// <summary>The asset's name with the extension of <paramref name="contentType"/>, or <c>null</c> when it already has it (VER-02).</summary>
+    private static string? FileNameFor(AssetFile asset, string contentType)
+    {
+        var extension = ImageFormat.All.FirstOrDefault(f => f.ContentType == contentType)?.Extension;
+        return extension is null || asset.FileName.EndsWith("." + extension, StringComparison.Ordinal)
+            ? null
+            : FileNames.Normalize(asset.FileName, extension);
     }
 
     private static ProblemHttpResult UnknownVersion(int number) =>

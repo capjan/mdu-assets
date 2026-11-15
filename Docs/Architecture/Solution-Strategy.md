@@ -18,7 +18,7 @@ description: The key approaches with which the MDU Asset Server reaches its qual
 | --- | --- |
 | Platform | .NET 10 Native AOT with ASP.NET Core minimal APIs ([ADR-0002](Architecture-Decisions/0002-Native-AOT-Minimal-APIs.md)) |
 | Persistence | SQLite with hand-written SQL and versioned migrations; files content-addressed on disk ([ADR-0005](Architecture-Decisions/0005-SQLite-and-Content-Addressed-Files.md)) |
-| Images | NetVips/libvips ([ADR-0006](Architecture-Decisions/0006-NetVips-for-Image-Processing.md)); AVIF in the background ([ADR-0011](Architecture-Decisions/0011-AVIF-in-the-Background.md)) |
+| Images | NetVips/libvips ([ADR-0006](Architecture-Decisions/0006-NetVips-for-Image-Processing.md)); the format chosen once on upload ([ADR-0019](Architecture-Decisions/0019-Format-Chosen-on-Upload.md)) |
 | Web interface | Embedded static files with plain JavaScript on the JSON API ([ADR-0007](Architecture-Decisions/0007-Static-UI-on-the-JSON-API.md)) |
 | Design | MDU design tokens copied with a drift test ([ADR-0010](Architecture-Decisions/0010-MDU-Design-Tokens.md)) |
 | Authentication | Basic Auth first, personal API tokens for tools ([ADR-0008](Architecture-Decisions/0008-Basic-Auth-and-API-Tokens.md)) |

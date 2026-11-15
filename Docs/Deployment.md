@@ -229,7 +229,7 @@ Then move the copy off the server, for example to a storage box, and remove it f
 docker run --rm -v mdu-assets_data:/data -v "$PWD":/backup alpine sh -c 'tar czf /backup/mdu-assets-$(date +%F).tar.gz -C /data/backups . && rm -rf /data/backups'
 ```
 
-To restore, stop the server, replace the contents of the volume with a backup folder and start it again. Previews and converted copies are made again when they are requested.
+To restore, stop the server, replace the contents of the volume with a backup folder and start it again. Previews and resized copies are made again when they are requested.
 
 ## Moving projects
 

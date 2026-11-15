@@ -27,10 +27,14 @@ public sealed record AssetFile(
     string? PairFileName = null,
     DateTimeOffset? DeletedAt = null,
     long Requests = 0,
-    DateTimeOffset? LastRequestAt = null);
+    DateTimeOffset? LastRequestAt = null,
+    VersionOriginal? Original = null);
+
+/// <summary>The upload a version was converted from (UP-11); kept, never served publicly.</summary>
+public sealed record VersionOriginal(string BlobSha256, string ContentType, long Size);
 
 /// <summary>What public delivery needs to serve an asset, read without joins on the hot path.</summary>
-public sealed record DeliveryFile(string BlobSha256, string ContentType, DateTimeOffset CreatedAt, int? Width, bool Animated, bool ConvertFormats);
+public sealed record DeliveryFile(string BlobSha256, string ContentType, DateTimeOffset CreatedAt, int? Width, bool Animated);
 
 /// <summary>What a public link points at: a file, an asset in the trash or deleted for good, or nothing.</summary>
 public enum DeliveryStatus
@@ -41,17 +45,17 @@ public enum DeliveryStatus
 }
 
 /// <summary>A version of an asset (VER-03).</summary>
-public sealed record AssetVersion(int Number, string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, string CreatedBy, DateTimeOffset CreatedAt);
+public sealed record AssetVersion(int Number, string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, string CreatedBy, DateTimeOffset CreatedAt, VersionOriginal? Original = null);
 
 /// <summary>The content of a new version.</summary>
-public sealed record NewVersion(string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, long CreatedBy);
+public sealed record NewVersion(string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, long CreatedBy, VersionOriginal? Original = null);
 
 /// <summary>An asset read from a project export, with its blobs already stored on this instance.</summary>
 public sealed record ImportedAsset(
     long ProjectId, long? FolderId, string FileName, string AltText, string Description, IReadOnlyList<string> Tags,
     int CurrentVersion, IReadOnlyList<ImportedVersion> Versions, long ImportedBy, DateTimeOffset CreatedAt);
 
-public sealed record ImportedVersion(int Number, string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, DateTimeOffset CreatedAt);
+public sealed record ImportedVersion(int Number, string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, DateTimeOffset CreatedAt, VersionOriginal? Original = null);
 
 /// <summary>An asset in the trash, for the trash list (DEL-02).</summary>
 public sealed record TrashedAsset(AssetFile Asset, DateTimeOffset DeletedAt, string? DeletedBy);
@@ -67,7 +71,8 @@ public sealed record NewAsset(
     int? Width,
     int? Height,
     long CreatedBy,
-    bool Animated = false);
+    bool Animated = false,
+    VersionOriginal? Original = null);
 
 /// <summary>
 /// Search and filters for the asset list (ORG-04). <c>FolderIds</c> limits to these folders; <c>Unfiled</c> to assets in no folder.
@@ -132,8 +137,8 @@ public sealed class AssetStore(Database database)
                 {
                     insertVersion.Transaction = transaction;
                     insertVersion.CommandText = """
-                        INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at)
-                        VALUES ($id, 1, $blob, $type, $size, $width, $height, $animated, $user, $now);
+                        INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at, original_sha256, original_content_type, original_size)
+                        VALUES ($id, 1, $blob, $type, $size, $width, $height, $animated, $user, $now, $original, $originalType, $originalSize);
                         """;
                     insertVersion.Parameters.AddWithValue("$id", id);
                     insertVersion.Parameters.AddWithValue("$blob", asset.BlobSha256);
@@ -144,6 +149,7 @@ public sealed class AssetStore(Database database)
                     insertVersion.Parameters.AddWithValue("$animated", asset.Animated);
                     insertVersion.Parameters.AddWithValue("$user", asset.CreatedBy);
                     insertVersion.Parameters.AddWithValue("$now", now);
+                    AddOriginal(insertVersion, asset.Original);
                     insertVersion.ExecuteNonQuery();
                 }
 
@@ -294,9 +300,8 @@ public sealed class AssetStore(Database database)
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT a.deleted_at, v.blob_sha256, v.content_type, v.created_at, v.width, v.animated, p.convert_formats
+            SELECT a.deleted_at, v.blob_sha256, v.content_type, v.created_at, v.width, v.animated
             FROM assets a
-            JOIN projects p ON p.id = a.project_id
             LEFT JOIN asset_versions v ON v.asset_id = a.id AND v.number = coalesce($version, a.current_version)
             WHERE a.id = $id;
             """;
@@ -310,7 +315,7 @@ public sealed class AssetStore(Database database)
         if (reader.IsDBNull(1))
             return (DeliveryStatus.Unknown, null);
         return (DeliveryStatus.Found, new DeliveryFile(reader.GetString(1), reader.GetString(2), Clock.Parse(reader.GetString(3)),
-            reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.GetBoolean(5), reader.GetBoolean(6)));
+            reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.GetBoolean(5)));
     }
 
     /// <summary>
@@ -338,7 +343,8 @@ public sealed class AssetStore(Database database)
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, v.animated, u.name, v.created_at
+            SELECT v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, v.animated, u.name, v.created_at,
+                   v.original_sha256, v.original_content_type, v.original_size
             FROM asset_versions v JOIN users u ON u.id = v.created_by
             WHERE v.asset_id = $id ORDER BY v.number DESC;
             """;
@@ -348,15 +354,16 @@ public sealed class AssetStore(Database database)
         while (reader.Read())
             versions.Add(new AssetVersion(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetInt64(3),
                 reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                reader.GetBoolean(6), reader.GetString(7), Clock.Parse(reader.GetString(8))));
+                reader.GetBoolean(6), reader.GetString(7), Clock.Parse(reader.GetString(8)), ReadOriginal(reader, 9)));
         return versions;
     }
 
     /// <summary>
     /// Adds a version and makes it current (VER-01); the link stays the same. With <paramref name="keep"/>, older versions
-    /// beyond that number are removed (VER-04). Returns the blobs of removed versions, which may now be unused.
+    /// beyond that number are removed (VER-04). <paramref name="fileName"/> renames the asset in the same step, for a version in
+    /// another format (VER-02). Returns the blobs of removed versions, which may now be unused.
     /// </summary>
-    public IReadOnlyList<string> AddVersion(string id, NewVersion version, int? keep = null)
+    public IReadOnlyList<string> AddVersion(string id, NewVersion version, int? keep = null, string? fileName = null)
     {
         using var connection = database.Open();
         using var transaction = connection.BeginTransaction();
@@ -364,9 +371,12 @@ public sealed class AssetStore(Database database)
         {
             insert.Transaction = transaction;
             insert.CommandText = """
-                INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at)
-                VALUES ($id, (SELECT max(number) + 1 FROM asset_versions WHERE asset_id = $id), $blob, $type, $size, $width, $height, $animated, $user, $now);
-                UPDATE assets SET current_version = (SELECT max(number) FROM asset_versions WHERE asset_id = $id) WHERE id = $id;
+                INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at, original_sha256, original_content_type, original_size)
+                VALUES ($id, (SELECT max(number) + 1 FROM asset_versions WHERE asset_id = $id), $blob, $type, $size, $width, $height, $animated, $user, $now,
+                        $original, $originalType, $originalSize);
+                UPDATE assets SET current_version = (SELECT max(number) FROM asset_versions WHERE asset_id = $id),
+                    file_name = coalesce($fileName, file_name)
+                WHERE id = $id;
                 """;
             insert.Parameters.AddWithValue("$id", id);
             insert.Parameters.AddWithValue("$blob", version.BlobSha256);
@@ -377,6 +387,8 @@ public sealed class AssetStore(Database database)
             insert.Parameters.AddWithValue("$animated", version.Animated);
             insert.Parameters.AddWithValue("$user", version.CreatedBy);
             insert.Parameters.AddWithValue("$now", Clock.Now());
+            insert.Parameters.AddWithValue("$fileName", (object?)fileName ?? DBNull.Value);
+            AddOriginal(insert, version.Original);
             insert.ExecuteNonQuery();
         }
 
@@ -388,32 +400,37 @@ public sealed class AssetStore(Database database)
             prune.CommandText = """
                 DELETE FROM asset_versions WHERE asset_id = $id AND number IN
                     (SELECT number FROM asset_versions WHERE asset_id = $id ORDER BY number DESC LIMIT -1 OFFSET $keep)
-                RETURNING blob_sha256;
+                RETURNING blob_sha256, original_sha256;
                 """;
             prune.Parameters.AddWithValue("$id", id);
             prune.Parameters.AddWithValue("$keep", limit);
             using var reader = prune.ExecuteReader();
-            while (reader.Read())
-                removed.Add(reader.GetString(0));
+            ReadBlobs(reader, removed);
         }
 
         transaction.Commit();
         return removed;
     }
 
-    /// <summary>Deletes an old version for good (VER-04). The current version cannot be deleted; returns its blob, or <c>null</c>.</summary>
-    public string? DeleteVersion(string id, int number)
+    /// <summary>
+    /// Deletes an old version for good (VER-04). The current version cannot be deleted; returns its blobs (with the original),
+    /// or none when nothing was deleted.
+    /// </summary>
+    public IReadOnlyList<string> DeleteVersion(string id, int number)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
             DELETE FROM asset_versions WHERE asset_id = $id AND number = $number
                 AND number <> (SELECT current_version FROM assets WHERE id = $id)
-            RETURNING blob_sha256;
+            RETURNING blob_sha256, original_sha256;
             """;
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$number", number);
-        return command.ExecuteScalar() as string;
+        using var reader = command.ExecuteReader();
+        var blobs = new List<string>();
+        ReadBlobs(reader, blobs);
+        return blobs;
     }
 
     /// <summary>Moves an asset to the trash (DEL-01). Its pair is dissolved, because the partner stays in use.</summary>
@@ -448,7 +465,7 @@ public sealed class AssetStore(Database database)
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = SelectCurrent.Replace("LEFT JOIN assets pa", "LEFT JOIN users du ON du.id = a.deleted_by\n        LEFT JOIN assets pa", StringComparison.Ordinal)
-            .Replace("a.deleted_at\n", "a.deleted_at, du.name\n", StringComparison.Ordinal) +
+            .Replace("v.original_size\n", "v.original_size, du.name\n", StringComparison.Ordinal) +
             " WHERE a.project_id = $project AND a.deleted_at IS NOT NULL AND a.purged_at IS NULL ORDER BY a.deleted_at DESC;";
         command.Parameters.AddWithValue("$project", projectId);
         using var reader = command.ExecuteReader();
@@ -456,7 +473,7 @@ public sealed class AssetStore(Database database)
         while (reader.Read())
         {
             var asset = ReadAsset(reader);
-            assets.Add(new TrashedAsset(asset, asset.DeletedAt!.Value, reader.IsDBNull(23) ? null : reader.GetString(23)));
+            assets.Add(new TrashedAsset(asset, asset.DeletedAt!.Value, reader.IsDBNull(26) ? null : reader.GetString(26)));
         }
 
         return assets;
@@ -495,12 +512,11 @@ public sealed class AssetStore(Database database)
             delete.CommandText = """
                 DELETE FROM asset_versions WHERE asset_id = $id
                     AND EXISTS (SELECT 1 FROM assets WHERE id = $id AND deleted_at IS NOT NULL AND purged_at IS NULL)
-                RETURNING blob_sha256;
+                RETURNING blob_sha256, original_sha256;
                 """;
             delete.Parameters.AddWithValue("$id", id);
             using var reader = delete.ExecuteReader();
-            while (reader.Read())
-                blobs.Add(reader.GetString(0));
+            ReadBlobs(reader, blobs);
         }
 
         using (var mark = connection.CreateCommand())
@@ -559,12 +575,13 @@ public sealed class AssetStore(Database database)
                 ("$description", asset.Description), ("$current", asset.CurrentVersion), ("$user", asset.ImportedBy), ("$createdAt", Clock.Format(asset.CreatedAt)));
             foreach (var version in asset.Versions)
                 Execute("""
-                    INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at)
-                    VALUES ($id, $number, $blob, $type, $size, $width, $height, $animated, $user, $createdAt);
+                    INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at, original_sha256, original_content_type, original_size)
+                    VALUES ($id, $number, $blob, $type, $size, $width, $height, $animated, $user, $createdAt, $original, $originalType, $originalSize);
                     """,
                     ("$id", id), ("$number", version.Number), ("$blob", version.BlobSha256), ("$type", version.ContentType), ("$size", version.Size),
                     ("$width", version.Width), ("$height", version.Height), ("$animated", version.Animated), ("$user", asset.ImportedBy),
-                    ("$createdAt", Clock.Format(version.CreatedAt)));
+                    ("$createdAt", Clock.Format(version.CreatedAt)), ("$original", version.Original?.BlobSha256),
+                    ("$originalType", version.Original?.ContentType), ("$originalSize", version.Original?.Size));
             foreach (var tag in asset.Tags)
                 Execute("INSERT OR IGNORE INTO tags (asset_id, key, name) VALUES ($id, $key, $name);", ("$id", id), ("$key", TagKey(tag)), ("$name", tag));
             transaction.Commit();
@@ -577,7 +594,7 @@ public sealed class AssetStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM asset_versions WHERE blob_sha256 = $blob LIMIT 1;";
+        command.CommandText = "SELECT 1 FROM asset_versions WHERE blob_sha256 = $blob OR original_sha256 = $blob LIMIT 1;";
         command.Parameters.AddWithValue("$blob", blobSha256);
         return command.ExecuteScalar() is not null;
     }
@@ -753,12 +770,16 @@ public sealed class AssetStore(Database database)
         command.ExecuteNonQuery();
     }
 
-    /// <summary>Bytes on disk for all versions; versions with the same content share one blob and count once.</summary>
+    /// <summary>Bytes on disk for all versions and their originals; the same content shares one blob and counts once.</summary>
     public long StorageUsed()
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT coalesce(sum(size), 0) FROM (SELECT DISTINCT blob_sha256, size FROM asset_versions);";
+        command.CommandText = """
+            SELECT coalesce(sum(size), 0) FROM (
+                SELECT blob_sha256, size FROM asset_versions
+                UNION SELECT original_sha256, original_size FROM asset_versions WHERE original_sha256 IS NOT NULL);
+            """;
         return (long)command.ExecuteScalar()!;
     }
 
@@ -766,7 +787,8 @@ public sealed class AssetStore(Database database)
         SELECT a.id, a.project_id, p.slug, a.folder_id, a.file_name, a.alt_text, a.description,
                (SELECT group_concat(t.name, char(31)) FROM (SELECT name FROM tags WHERE asset_id = a.id ORDER BY key) t),
                v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, u.name, v.created_at,
-               v.animated, a.pair_asset_id, a.pair_role, pa.file_name, s.hit_count, s.last_hit_at, a.deleted_at
+               v.animated, a.pair_asset_id, a.pair_role, pa.file_name, s.hit_count, s.last_hit_at, a.deleted_at,
+               v.original_sha256, v.original_content_type, v.original_size
         FROM assets a
         JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
         JOIN projects p ON p.id = a.project_id
@@ -792,5 +814,27 @@ public sealed class AssetStore(Database database)
             reader.IsDBNull(19) ? null : reader.GetString(19),
             reader.IsDBNull(22) ? null : Clock.Parse(reader.GetString(22)),
             reader.IsDBNull(20) ? 0 : reader.GetInt64(20),
-            reader.IsDBNull(21) ? null : Clock.Parse(reader.GetString(21)));
+            reader.IsDBNull(21) ? null : Clock.Parse(reader.GetString(21)),
+            ReadOriginal(reader, 23));
+
+    private static VersionOriginal? ReadOriginal(SqliteDataReader reader, int first) =>
+        reader.IsDBNull(first) ? null : new VersionOriginal(reader.GetString(first), reader.GetString(first + 1), reader.GetInt64(first + 2));
+
+    private static void AddOriginal(SqliteCommand command, VersionOriginal? original)
+    {
+        command.Parameters.AddWithValue("$original", (object?)original?.BlobSha256 ?? DBNull.Value);
+        command.Parameters.AddWithValue("$originalType", (object?)original?.ContentType ?? DBNull.Value);
+        command.Parameters.AddWithValue("$originalSize", (object?)original?.Size ?? DBNull.Value);
+    }
+
+    /// <summary>Reads <c>RETURNING blob_sha256, original_sha256</c>: every blob a deleted version used.</summary>
+    internal static void ReadBlobs(SqliteDataReader reader, List<string> blobs)
+    {
+        while (reader.Read())
+        {
+            blobs.Add(reader.GetString(0));
+            if (!reader.IsDBNull(1))
+                blobs.Add(reader.GetString(1));
+        }
+    }
 }

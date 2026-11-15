@@ -34,7 +34,7 @@ Der Server ergänzt lokale Bilder in MDU-Projekten, er ersetzt sie nicht. Markdo
 | Web-Anmeldung | Zuerst Basic Auth; später Login-Formular mit Session, OIDC/SSO und Passkeys |
 | Benutzeranlage | Nur durch Admins; der erste Admin wird beim Start über Umgebungsvariablen angelegt |
 | Snippets | Markdown mit Alt-Text, Hell/Dunkel-Paar, MDU-Attribute, reine URL und HTML |
-| Bildverarbeitung | Metadaten entfernen, Vorschaubilder, Größen per Parameter, WebP/AVIF-Auslieferung; mit NetVips/libvips |
+| Bildverarbeitung | Metadaten entfernen, Format direkt nach dem Upload wählen (WebP), Vorschaubilder, Größen per Parameter; mit NetVips/libvips |
 | Dateitypen | Nur die MDU-Bildformate: png, jpg/jpeg, gif, webp, avif, bmp, svg |
 | Statistik | Zähler, letzter Abruf, verweisende Seiten; Bots und Abrufe aus der Verwaltungs-UI werden nicht gezählt |
 | mdu-CLI | Neuer Befehl `mdu assets upload`; `mdu lint` prüft Asset-Links |
@@ -111,9 +111,10 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 | UP-05 | Nach dem Upload erscheint das Asset sofort mit dem Markdown-Snippet und einer hervorgehobenen Kopieren-Schaltfläche. Wo der Browser es erlaubt, wird das Snippet direkt in die Zwischenablage kopiert; ein Hinweis bestätigt das. Bei mehreren Dateien gibt es „Alle Snippets kopieren“. | M |
 | UP-06 | Erlaubt sind nur png, jpg/jpeg, gif, webp, avif, bmp und svg. Der Typ wird am Dateiinhalt (Signatur) geprüft, nicht nur an der Endung. | M |
 | UP-07 | SVG-Dateien werden beim Upload bereinigt (keine Scripts, Event-Handler, externen Referenzen, `foreignObject`); die Bereinigung folgt der Allowlist des SVG-Lesers von MDU, ist aber ein eigener Sanitizer für vollständige Dateien ([ADR-0012](Architecture/Architecture-Decisions/0012-Own-SVG-Sanitizer.md)). | M |
-| UP-08 | Bei Pixelbildern werden EXIF-, GPS- und sonstige Metadaten entfernt; die Farbprofil-Information bleibt erhalten, die Ausrichtung wird vorher angewendet. Das Original wird nicht zusätzlich aufbewahrt. | M |
+| UP-08 | Bei Pixelbildern werden EXIF-, GPS- und sonstige Metadaten entfernt; die Farbprofil-Information bleibt erhalten, die Ausrichtung wird vorher angewendet. Auch das aufbewahrte Original (UP-11) ist bereinigt. | M |
 | UP-09 | Lädt jemand eine Datei hoch, deren Inhalt im Projekt schon existiert (SHA-256), weist die UI darauf hin und bietet den vorhandenen Link an. | S |
 | UP-10 | Uploads über Größenlimit oder Quote werden mit verständlicher Meldung abgelehnt, bevor die Datei vollständig übertragen ist (wenn `Content-Length` bekannt). | M |
+| UP-11 | Direkt nach dem Upload wählt der Server das Format mit dem besten Verhältnis von Größe und Qualität und liefert nur noch dieses aus: Fotos (JPEG) werden verlustbehaftetes WebP in hoher Qualität, Grafiken (PNG, BMP, unbewegtes GIF) verlustfreies WebP, jeweils nur, wenn die Datei kleiner wird. SVG, AVIF, WebP und Animationen bleiben, wie sie sind. Dateiname und Endung folgen dem gespeicherten Format. Die hochgeladene Datei wird aufbewahrt, aber nicht öffentlich ausgeliefert; sie zählt zur Quote und ist in Exporten und Backups enthalten. Pro Projekt abschaltbar; bestehende Bilder bleiben unverändert ([ADR-0019](Architecture/Architecture-Decisions/0019-Format-Chosen-on-Upload.md)). | M |
 
 ### 5.4 Links und Snippets
 
@@ -136,7 +137,7 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 | DLV-01 | Öffentliche Links liefern die aktuelle Version ohne Anmeldung, mit korrektem `Content-Type`, `ETag`, `Last-Modified` und Unterstützung für `If-None-Match`/`If-Modified-Since`. | M |
 | DLV-02 | Da sich der Inhalt hinter einem Link ändern kann, nutzen Links `Cache-Control: public, max-age=300, stale-while-revalidate=86400` (konfigurierbar). Zusätzlich gibt es versionsfeste Links `/i/<asset-id>/v<n>/<dateiname>` mit `immutable`. | M |
 | DLV-03 | `?w=<breite>` liefert eine proportional verkleinerte Fassung (nie vergrößert). Erlaubt sind nur konfigurierte Breiten (Standard: 320, 640, 800, 1024, 1280, 1600, 2048), damit Angreifer keinen unbegrenzten Cache erzeugen. Abgeleitete Fassungen werden auf der Platte zwischengespeichert. | M |
-| DLV-04 | Für Pixelbilder (außer GIF-Animationen) liefert der Server AVIF oder WebP, wenn der `Accept`-Header es erlaubt und die Datei kleiner wird; Antwort mit `Vary: Accept`. Pro Projekt abschaltbar. AVIF-Fassungen werden im Hintergrund erzeugt (nach dem Upload und für neu angefragte Breiten), weil eine Kodierung rund eine Sekunde dauert; bis sie fertig ist, liefert der Server WebP oder das Original. Gleichzeitige Bildjobs sind begrenzt. | M |
+| DLV-04 | Ein Link liefert immer das gespeicherte Format (UP-11), unabhängig vom `Accept`-Header; `?w=` verkleinert im selben Format. So passen Endung und `Content-Type` zusammen. Gleichzeitige Bildjobs sind begrenzt. | M |
 | DLV-05 | SVG wird mit `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` ausgeliefert; alle Antworten tragen `X-Content-Type-Options: nosniff`. | M |
 | DLV-06 | Vorschaubilder für die UI werden beim Upload erzeugt und über einen angemeldeten, nicht gezählten Endpunkt ausgeliefert. | M |
 | DLV-07 | Assets im Papierkorb liefern `410 Gone` (optional ein konfigurierbares Platzhalterbild); unbekannte IDs liefern `404`. | M |
@@ -159,7 +160,7 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 | ID | Anforderung | Prio |
 | --- | --- | :-: |
 | VER-01 | Editoren ersetzen ein Asset durch eine neue Datei (Drag & Drop auf die Detailansicht, Einfügen oder Dateiauswahl). Der Link bleibt, die Versionsnummer steigt. | M |
-| VER-02 | Ein Ersatz darf das Format wechseln (z. B. png → webp). Die Endung im Link bleibt dann historisch; ausgeliefert wird der tatsächliche `Content-Type`. Die UI zeigt einen Hinweis. | M |
+| VER-02 | Ein Ersatz darf das Format wechseln (z. B. png → webp, auch durch UP-11). Der Dateiname bekommt dann die neue Endung; Links mit dem alten Namen funktionieren weiter, weil nur die ID zählt, und Versionslinks älterer Versionen behalten ihre Endung. Die UI zeigt einen Hinweis. | M |
 | VER-03 | Die Versionsliste zeigt Datum, Benutzer, Größe und Abmessungen; jede Version ist abrufbar und kann zur aktuellen gemacht werden (als neue Version). | M |
 | VER-04 | Alte Versionen zählen zur Quote. Owner können einzelne alte Versionen endgültig löschen. Optional: automatische Bereinigung nach N Versionen (Projekteinstellung). | S |
 | DEL-01 | Löschen legt Assets in den Papierkorb. Wurde das Asset in den letzten 30 Tagen abgerufen, warnt die UI vorher mit Anzahl und verweisenden Seiten. | M |
@@ -315,7 +316,7 @@ AuditEntry(id, at, user_id?, project_id?, action, target, details_json, ip)
 | --- | --- | --- |
 | R-01 | NetVips unter Native AOT und AVIF-Kodierung im mitgelieferten libvips. | **Durch [Spike](Architecture/NetVips-AOT-Spike.md) entschärft:** 0 AOT-Warnungen, alle Prüfungen bestanden auf osx-arm64 und Linux. Hinweis: Multi-Arch-Builds nicht unter Emulation, sondern nativ oder per Cross-Compile. |
 | R-02 | Native Binaries sind wegen libvips keine Einzeldatei. | Bestätigt. Release als Archiv; Docker (chiselled `runtime-deps` reicht) als empfohlener Weg. |
-| R-07 | AVIF-Kodierung ist langsam (≈ 1 s für 1600×900) und speicherhungrig. | Hintergrund-Erzeugung und begrenzte Parallelität (DLV-04), libvips-Cache begrenzen. |
+| R-07 | AVIF-Kodierung ist langsam (≈ 1 s für 1600×900) und speicherhungrig. | Der Server erzeugt kein AVIF mehr, sondern WebP beim Upload (≈ 0,2 s, UP-11); begrenzte Parallelität, libvips-Cache begrenzt. |
 | R-03 | Öffentliche Bilder mit nicht erratbaren IDs sind keine Zugriffskontrolle; einmal geteilte Links lassen sich nicht zurückholen. | In UI und Doku klar benennen; Löschen liefert sofort 410. |
 | R-04 | SVG-Uploads sind ein XSS-Vektor. | Bereinigung (UP-07), CSP mit `sandbox` (DLV-05), getrennter Host (LNK-04). |
 | R-05 | Abrufzahlen sind durch Caches und CDNs systematisch zu niedrig. | Kurze `max-age` (DLV-02), Grenze in der UI erklären. |

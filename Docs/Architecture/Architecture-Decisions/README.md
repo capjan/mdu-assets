@@ -19,14 +19,15 @@ Each significant, hard-to-reverse decision is recorded as one file in the [MADR]
 | [0008](0008-Basic-Auth-and-API-Tokens.md) | Basic Auth first, personal API tokens for tools | Accepted |
 | [0009](0009-Separate-Public-Host.md) | Serve public links from a separate host | Accepted |
 | [0010](0010-MDU-Design-Tokens.md) | Copy the MDU design tokens with a drift test | Accepted |
-| [0011](0011-AVIF-in-the-Background.md) | Encode AVIF variants in the background | Accepted |
+| [0011](0011-AVIF-in-the-Background.md) | Encode AVIF variants in the background | Superseded by 0019 |
 | [0012](0012-Own-SVG-Sanitizer.md) | Clean SVG uploads with an own sanitizer that follows MDU's allowlist | Accepted |
 | [0013](0013-Image-Headers-Without-an-Image-Library.md) | Read image type and size from headers without an image library | Accepted |
 | [0014](0014-Project-Creation-by-Admin-Setting.md) | Admins create projects; other users only when an admin allows it | Accepted |
-| [0015](0015-Image-Variant-Rules.md) | Re-encode only to remove metadata, snap widths, convert only when smaller | Accepted |
+| [0015](0015-Image-Variant-Rules.md) | Re-encode only to remove metadata, snap widths, convert only when smaller | Accepted; formats superseded by 0019 |
 | [0016](0016-Version-Retention-and-Cache-Purging.md) | Keep all versions unless owners set a limit; no CDN purge hook | Accepted |
 | [0017](0017-Referrer-Policy-for-MDU-Pages.md) | MDU keeps the browser default referrer policy for asset images | Accepted |
 | [0018](0018-Import-Id-Collisions.md) | Imports keep free ids and map the others to new ones | Accepted |
+| [0019](0019-Format-Chosen-on-Upload.md) | Choose WebP once after upload, keep the original, no negotiation by `Accept` | Accepted |
 
 ## Template
 

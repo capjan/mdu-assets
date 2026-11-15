@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MduAssets.Test;
 
@@ -42,6 +43,18 @@ public sealed class TestServer : IDisposable
         _factory.Server.SendAsync(configure, TestContext.Current.CancellationToken);
 
     public IServiceProvider Services => _factory.Services;
+
+    /// <summary>
+    /// Keeps uploads to a project in their format (UP-11 off), for tests about other features that compare names, sizes or
+    /// bytes with what they uploaded. The conversion itself is tested in ImageProcessingTest.
+    /// </summary>
+    public TestServer KeepUploadedFormats(string project = "default")
+    {
+        var projects = Services.GetRequiredService<MduAssets.Storage.ProjectStore>();
+        var target = projects.Find(project)!;
+        projects.Update(target.Id, target.Name, target.Description, convertFormats: false, target.MaxVersions, target.MaxFileBytes, target.QuotaBytes);
+        return this;
+    }
 
     /// <summary>A client for the web interface and API host, signed in as the first admin unless told otherwise.</summary>
     public HttpClient Ui(string? user = AdminName, string? password = AdminPassword, string scheme = "http")

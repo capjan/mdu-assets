@@ -11,7 +11,7 @@ public sealed class AssetApiTest : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private readonly TestServer _server = new();
+    private readonly TestServer _server = new TestServer().KeepUploadedFormats();
 
     public void Dispose() => _server.Dispose();
 

@@ -71,8 +71,6 @@ public sealed class ServerSettings
             throw new StartupException("MDU_ASSETS_STATSFLUSHSECONDS must be between 1 and 3600.");
         if (options.TrashRetentionDays < 1)
             throw new StartupException("MDU_ASSETS_TRASHRETENTIONDAYS must be at least 1.");
-        if (options.AvifWorkers < 0)
-            throw new StartupException("MDU_ASSETS_AVIFWORKERS must be 0 (no AVIF) or more.");
 
         return new ServerSettings(options, ui, publicLinks, ParseProxies(options.TrustedProxies), ParseWidths(options.Widths));
     }
