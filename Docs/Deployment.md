@@ -144,6 +144,8 @@ curl -H "Authorization: Bearer mdua_…" -H "Content-Type: image/png" --data-bin
   "https://assets.example.com/api/v1/projects/default/assets?name=screenshot.png"
 ```
 
+Uploads are converted to WebP: lossless for screenshots and graphics, lossy at high quality for photos. Add `&lossless=true` when every pixel matters; then nothing loses quality and JPEG stays as uploaded.
+
 With a password instead of a token:
 
 ```bash

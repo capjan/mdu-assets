@@ -8,22 +8,15 @@ namespace MduAssets.Api;
 
 /// <summary>
 /// An image received, checked, cleaned and stored as a blob, with the name and alt text that came with it. When it was converted
-/// to WebP (UP-11), <c>Original</c> is the cleaned upload, kept but never served.
+/// to WebP (UP-11), <c>Original</c> records the type and size of the upload; only the converted file is stored.
 /// </summary>
-public sealed record ReceivedImage(StoredBlob Blob, ImageInfo Info, bool Animated, string? Name, string? Alt, VersionOriginal? Original = null)
-{
-    /// <summary>Bytes the image adds to its project, with the kept original.</summary>
-    public long Size => Blob.Size + (Original?.Size ?? 0);
-
-    /// <summary>The blobs stored for this image, to remove again when it is refused after all.</summary>
-    public IEnumerable<string> Blobs => Original is null ? [Blob.Hash] : [Blob.Hash, Original.BlobSha256];
-}
+public sealed record ReceivedImage(StoredBlob Blob, ImageInfo Info, bool Animated, string? Name, string? Alt, VersionOriginal? Original = null);
 
 /// <summary>
 /// Reads one image from a request, as <c>multipart/form-data</c> (field <c>file</c>, optional <c>name</c> and <c>alt</c>) or
 /// as the raw body with <c>?name=</c> and <c>?alt=</c> (API-04). Checks the type from the content (UP-06), the size and pixel
 /// limits, sanitizes SVG (UP-07), removes metadata (UP-08), picks the format to serve when <c>convert</c> is set (UP-11) and
-/// stores the blobs. Shared by uploads and new versions.
+/// stores the blob. <c>?lossless=true</c> asks for a conversion without any loss of quality. Shared by uploads and new versions.
 /// </summary>
 public static class UploadReceiver
 {
@@ -89,8 +82,9 @@ public static class UploadReceiver
             prepared = await jobs.RunAsync(() => ImageProcessor.Prepare(detected.Content, detected.Info), cancellationToken);
             if (convert)
             {
-                var source = (Animated: prepared.Animated, Size: (long)prepared.Content.Length);
-                webp = await jobs.RunAsync(() => ImageProcessor.ToWebP(detected.Content, detected.Info, source.Animated, source.Size), cancellationToken);
+                var source = (Animated: prepared.Animated, Size: (long)prepared.Content.Length, Lossless: IsLossless(context.Request));
+                webp = await jobs.RunAsync(
+                    () => ImageProcessor.ToWebP(detected.Content, detected.Info, source.Animated, source.Size, source.Lossless), cancellationToken);
             }
         }
         catch (ImageDecodeException exception)
@@ -98,12 +92,15 @@ public static class UploadReceiver
             return (null, Problem(StatusCodes.Status422UnprocessableEntity, "Unreadable image", exception.Message));
         }
 
-        var cleaned = await blobs.PutAsync(new MemoryStream(prepared.Content, writable: false), cancellationToken);
         if (webp is null)
+        {
+            var cleaned = await blobs.PutAsync(new MemoryStream(prepared.Content, writable: false), cancellationToken);
             return (new ReceivedImage(cleaned, prepared.Info, prepared.Animated, name, alt), null);
+        }
 
+        // Only the converted file is kept; the upload is remembered by its type and size.
         var served = await blobs.PutAsync(new MemoryStream(webp.Content, writable: false), cancellationToken);
-        var original = new VersionOriginal(cleaned.Hash, prepared.Info.ContentType, cleaned.Size);
+        var original = new VersionOriginal(null, info.ContentType, data.Length);
         return (new ReceivedImage(served, prepared.Info with { Format = ImageFormat.WebP }, prepared.Animated, name, alt, original), null);
     }
 
@@ -142,6 +139,8 @@ public static class UploadReceiver
 
         return buffer.ToArray();
     }
+
+    private static bool IsLossless(HttpRequest request) => request.Query["lossless"].ToString() is "true" or "1";
 
     private static ProblemHttpResult TooLarge(long limit) =>
         Problem(StatusCodes.Status413PayloadTooLarge, "File too large", $"Uploads may have at most {limit:N0} bytes.");

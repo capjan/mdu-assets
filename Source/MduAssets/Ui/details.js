@@ -1,6 +1,6 @@
 // Details of one image (ORG-06): large preview, snippets, description, tags, folder and metadata.
 import {
-    $, announce, clearFormError, copyText, dateFormat, element, flashCopied, folderOptions, formatSize, handleSubmit,
+    $, announce, bindLosslessToggle, clearFormError, copyText, dateFormat, losslessQuery, element, flashCopied, folderOptions, formatSize, handleSubmit,
     numberFormat, openDialog, plural, readSetting, recentUse, request, send, writeSetting,
 } from "./common.js";
 import { buildSnippet, formats, optionControls, readOptions, writeOptions } from "./snippets.js";
@@ -152,7 +152,7 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
         const meta = [
             ["Type", typeNames[asset.contentType] ?? asset.contentType],
             ...(asset.originalContentType
-                ? [["Uploaded as", `${typeNames[asset.originalContentType] ?? asset.originalContentType}, ${formatSize(asset.originalSize)} (kept, not public)`]]
+                ? [["Uploaded as", `${typeNames[asset.originalContentType] ?? asset.originalContentType}, ${formatSize(asset.originalSize)}`]]
                 : []),
             ["Dimensions", asset.width && asset.height ? `${asset.width} × ${asset.height} pixels` : "–"],
             ["Size", formatSize(asset.size)],
@@ -334,7 +334,7 @@ function setUpLifecycle(project, { canEdit, editable, owner, get, render }) {
         button.disabled = true;
         announce(`Uploading ${file.name || "the image"} as a new version…`);
         try {
-            const result = await request(`/assets/${encodeURIComponent(asset.id)}/versions`, {
+            const result = await request(`/assets/${encodeURIComponent(asset.id)}/versions${losslessQuery() ? `?${losslessQuery()}` : ""}`, {
                 method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
             });
             render(result.asset);
@@ -356,6 +356,7 @@ function setUpLifecycle(project, { canEdit, editable, owner, get, render }) {
         }
     };
     replaceWithFile = editable ? replace : null;
+    bindLosslessToggle($("asset-replace-lossless"));
     $("asset-replace").addEventListener("click", () => $("asset-replace-input").click());
     $("asset-replace-input").addEventListener("change", (event) => {
         replace(event.target.files[0]);

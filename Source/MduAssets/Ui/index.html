@@ -79,6 +79,7 @@
             <input class="file-input" id="file-input" type="file" multiple
                    accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,.svg" tabindex="-1" aria-hidden="true">
             <p class="toolbar-hint" id="toolbar-hint">or drop or paste images anywhere on this page</p>
+            <label class="checkbox" title="Keep every pixel: no lossy compression for screenshots and graphics, JPEG stays as uploaded. Usually larger."><input id="upload-lossless" type="checkbox"> Lossless</label>
             <div class="view-switch" role="group" aria-label="View">
                 <button class="icon-button" id="view-grid" type="button" aria-pressed="true" aria-label="Grid" title="Grid">
                     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="3" y="3" width="5.5" height="5.5" rx="1.2"></rect><rect x="11.5" y="3" width="5.5" height="5.5" rx="1.2"></rect><rect x="3" y="11.5" width="5.5" height="5.5" rx="1.2"></rect><rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1.2"></rect></svg>
@@ -179,6 +180,7 @@
                 <div class="form-actions" id="asset-actions">
                     <button class="secondary-button" id="asset-replace" type="button">Replace image…</button>
                     <input class="file-input" id="asset-replace-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,.svg" tabindex="-1" aria-hidden="true">
+                    <label class="checkbox" title="Keep every pixel: no lossy compression for screenshots and graphics, JPEG stays as uploaded. Usually larger."><input id="asset-replace-lossless" type="checkbox"> Lossless</label>
                     <button class="danger-button" id="asset-trash" type="button">Move to trash</button>
                 </div>
                 <p class="form-hint" id="asset-replace-hint">Drop or paste an image here to replace it. The link stays the same; earlier versions stay under their version links.</p>

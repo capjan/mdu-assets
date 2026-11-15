@@ -38,12 +38,11 @@ public static class UploadEndpoint
         if (receiveProblem is not null)
             return receiveProblem;
         var (blob, info) = (image!.Blob, image.Info);
-        if (Quotas.Check(target, projects, image.Size, image.Blobs, cleanup) is { } quotaProblem)
+        if (Quotas.Check(target, projects, blob.Size, [blob.Hash], cleanup) is { } quotaProblem)
             return quotaProblem;
 
         if (context.Request.Query["duplicates"] == "reject" && assets.FindByContent(target.Id, blob.Hash) is { } existingId)
         {
-            cleanup.Collect(image.Blobs);
             var existing = AssetResponse.From(assets.FindCurrent(existingId)!, settings);
             return TypedResults.Conflict(new DuplicateResponse("Already uploaded",
                 $"This image is already in the project as {existing.FileName}.", existing));

@@ -108,16 +108,24 @@ public static class ImageProcessor
     public const int WebPMaxDimension = 16383;
 
     /// <summary>
-    /// The format decided right after upload (UP-11), the sweet spot between size and quality for documentation: photos (JPEG)
-    /// become lossy WebP at a quality where differences are hard to see, graphics (PNG, BMP, still GIF) such as screenshots and
-    /// diagrams become lossless WebP, so text stays sharp. Returns <c>null</c> when the image keeps its format: SVG, AVIF and WebP,
-    /// animations, images with more than 8 bits per channel or beyond WebP's size limit, and whenever WebP would not be smaller
-    /// than <paramref name="currentSize"/>. Orientation is applied; only the ICC profile is kept.
+    /// How much larger a lossless copy may be than a lossy one and still be chosen: screenshots of interfaces, text and diagrams
+    /// stay lossless and sharp, photos (also inside a screenshot) become lossy, where lossless is usually five to ten times larger.
     /// </summary>
-    public static EncodedImage? ToWebP(byte[] data, ImageInfo info, bool animated, long currentSize)
+    public const double LosslessAllowance = 2.0;
+
+    /// <summary>
+    /// The format decided right after upload (UP-11), the sweet spot between size and quality: JPEG becomes lossy WebP; PNG, BMP
+    /// and still GIF become lossless WebP unless that is more than <see cref="LosslessAllowance"/> times the lossy size, which
+    /// means photographic content. With <paramref name="lossless"/> nothing loses quality: graphics only become lossless WebP and
+    /// JPEG stays as it is. Returns <c>null</c> when the image keeps its format: SVG, AVIF and WebP, animations, images with more
+    /// than 8 bits per channel or beyond WebP's size limit, and whenever WebP would not be smaller than <paramref name="currentSize"/>.
+    /// Orientation is applied; only the ICC profile is kept.
+    /// </summary>
+    public static EncodedImage? ToWebP(byte[] data, ImageInfo info, bool animated, long currentSize, bool lossless = false)
     {
-        var lossy = info.Format == ImageFormat.Jpeg;
-        if (animated || !(lossy || info.Format == ImageFormat.Png || info.Format == ImageFormat.Bmp || info.Format == ImageFormat.Gif))
+        var photo = info.Format == ImageFormat.Jpeg;
+        if (animated || (photo && lossless) ||
+            !(photo || info.Format == ImageFormat.Png || info.Format == ImageFormat.Bmp || info.Format == ImageFormat.Gif))
             return null;
         if (info.Width > WebPMaxDimension || info.Height > WebPMaxDimension)
             return null;
@@ -128,9 +136,15 @@ public static class ImageProcessor
             if (image.Format != Enums.BandFormat.Uchar)
                 return null;
             using var rotated = image.Autorot();
-            var content = lossy
-                ? rotated.WebpsaveBuffer(q: 82, smartSubsample: true, keep: Enums.ForeignKeep.Icc)
-                : rotated.WebpsaveBuffer(lossless: true, keep: Enums.ForeignKeep.Icc);
+            byte[] content;
+            if (photo)
+                content = Lossy(rotated);
+            else
+            {
+                content = rotated.WebpsaveBuffer(lossless: true, keep: Enums.ForeignKeep.Icc);
+                if (!lossless && Lossy(rotated) is var lossy && content.Length > lossy.Length * LosslessAllowance)
+                    content = lossy;
+            }
             return content.Length < currentSize ? new EncodedImage(content, "image/webp") : null;
         }
         catch (VipsException exception)
@@ -138,6 +152,8 @@ public static class ImageProcessor
             throw new ImageDecodeException("The image could not be converted.", exception);
         }
     }
+
+    private static byte[] Lossy(Image image) => image.WebpsaveBuffer(q: 82, smartSubsample: true, keep: Enums.ForeignKeep.Icc);
 
     private static bool IsBmp(string path)
     {
