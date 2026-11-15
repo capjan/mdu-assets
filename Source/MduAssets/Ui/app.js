@@ -1,7 +1,7 @@
 // MDU Asset Server web interface. Plain JavaScript on the JSON API, no build step (ADR-0007).
 // This module runs the project page and picks the page to show; the other pages live in pages.js.
 import {
-    $, api, announce, copyText, element, flashCopied, folderOptions, recentUse, folderPath, folderSubtree, folderTree, formatSize, numberFormat,
+    $, api, announce, copyText, element, flashCopied, recentUse, formatSize, numberFormat,
     bindLosslessToggle, dateFormat, losslessQuery, openDialog, plural, readSetting, request, send, writeSetting,
 } from "./common.js";
 import { replaceWithFile, showDetails } from "./details.js";
@@ -14,8 +14,6 @@ const state = {
     page: params.get("page") || "project",
     project: params.get("project"),
     asset: params.get("asset"),
-    // "none" for images in no folder, a folder id, or null for all images of the project.
-    folder: params.get("folder"),
     filters: {
         q: params.get("q") ?? "",
         // Every tag must be on an image (ORG-04); "untagged" shows the images without any.
@@ -26,9 +24,7 @@ const state = {
         unused: params.get("unused") ?? "",
         from: params.get("from") ?? "",
         to: params.get("to") ?? "",
-        subfolders: params.get("subfolders") === "true",
     },
-    folders: [],
     selected: new Set(),
     focusId: null,
     projects: [],
@@ -135,8 +131,7 @@ async function load() {
 
     if (project && state.asset) {
         showPage("asset");
-        await loadFolders();
-        await showDetails(project, state.asset, { editable: canEdit(), onFolderChange: loadFolders, me: state.me });
+        await showDetails(project, state.asset, { editable: canEdit(), me: state.me });
         return;
     }
 
@@ -149,175 +144,33 @@ async function load() {
         $("empty-state").textContent = state.project
             ? `There is no project '${state.project}', or you are not a member of it.`
             : me.canCreateProjects ? "Create a project to start uploading images." : "Ask an admin or a project owner to add you to a project.";
-        $("folder-bar").hidden = true;
         $("search-form").hidden = true;
         return;
     }
-    await Promise.all([loadFolders(), loadFacets()]);
+    await loadFacets();
     renderFilters();
     await loadAssets();
 }
 
-// Folders (ORG-01, ORG-02): a tree in the sidebar, the path above the images, actions for editors.
 const projectPath = () => `/projects/${encodeURIComponent(state.project)}`;
-const folderId = () => (state.folder && state.folder !== "none" ? Number(state.folder) : null);
 
 /** A link to the project page that keeps the current search and filters. */
-function pageLink({ folder = state.folder, filters = state.filters } = {}) {
+function pageLink({ filters = state.filters } = {}) {
     const query = new URLSearchParams({ project: state.project });
-    if (folder) query.set("folder", folder);
     for (const [key, value] of Object.entries(filters)) {
         if (key === "tags") for (const tag of value) query.append("tag", tag);
-        else if (value && !(key === "subfolders" && !folder)) query.set(key, String(value));
+        else if (value) query.set(key, String(value));
     }
     return `/?${query}`;
 }
 
-async function loadFolders() {
-    state.folders = (await request(`${projectPath()}/folders`)).items;
-    if (folderId() && !state.folders.some((f) => f.id === folderId())) state.folder = null;
-    renderFolders();
-}
-
-function renderFolders() {
-    const editable = canEdit();
-    const link = (folder, label, count, depth = 0) => {
-        const value = folder === null ? null : String(folder);
-        const current = (state.folder ?? null) === value;
-        const anchor = element("a", {
-            class: "folder-link",
-            href: pageLink({ folder: value }),
-            "aria-current": current && !state.asset ? "page" : null,
-        }, [element("span", { class: "folder-name", text: label }), ...(count === null ? [] : [element("span", { class: "project-count", text: numberFormat.format(count) })])]);
-        // Set through the CSS object model: the content security policy blocks style attributes.
-        anchor.style.setProperty("--depth", String(depth));
-        if (editable && value !== null) makeDropTarget(anchor, value === "none" ? null : Number(value), label);
-        return element("li", {}, [anchor]);
-    };
-    $("folder-tree").replaceChildren(
-        link(null, "All images", null),
-        ...folderTree(state.folders).map((f) => link(f.id, f.name, f.assetCount, f.depth + 1)),
-        link("none", "Not in a folder", null));
-    $("folder-nav").hidden = false;
-
-    // The path: project, then each folder down to the current one.
-    const id = folderId();
-    const crumbs = [element("a", { href: pageLink({ folder: null }), text: "All images" })];
-    if (state.folder === "none") crumbs.push(element("span", { "aria-current": "page", text: "Not in a folder" }));
-    for (const folder of id ? folderPath(state.folders, id) : []) {
-        crumbs.push(folder.id === id
-            ? element("span", { "aria-current": "page", text: folder.name })
-            : element("a", { href: pageLink({ folder: String(folder.id) }), text: folder.name }));
-    }
-    $("folder-path").replaceChildren(element("ol", {}, crumbs.map((crumb) => element("li", {}, [crumb]))));
-
-    // On narrow screens the sidebar is hidden; a select offers the same folders.
-    const select = $("folder-select");
-    select.replaceChildren(
-        element("option", { value: "", text: "All images", selected: !state.folder }),
-        ...folderOptions(state.folders, { noneLabel: "Not in a folder", selected: id ?? "" }).slice(1),
-        element("option", { value: "none", text: "Not in a folder", selected: state.folder === "none" }));
-    select.onchange = () => { location.href = pageLink({ folder: select.value || null }); };
-
-    $("folder-actions").hidden = !editable;
-    for (const name of ["rename-folder", "move-folder", "delete-folder"]) $(name).hidden = !id;
-    $("filter-subfolders").closest(".checkbox").hidden = !id;
-}
-
-function folderNameField(value = "") {
+function nameField(value = "") {
     const input = element("input", { type: "text", required: true, maxlength: "100", autocomplete: "off", value });
     return [element("label", { class: "field" }, [element("span", { text: "Name" }), input]), input];
 }
 
-async function runFolderAction(action, message) {
-    try {
-        await action();
-        await loadFolders();
-        await loadAssets();
-        announce(message);
-    } catch (error) {
-        announce(error.message);
-        await openDialog({ title: "That did not work", text: error.message, confirmLabel: "OK" });
-    }
-}
-
-$("new-folder").addEventListener("click", async () => {
-    const [field, input] = folderNameField();
-    const parent = folderId();
-    const parentName = parent ? state.folders.find((f) => f.id === parent)?.name : null;
-    if (!await openDialog({ title: "New folder", text: parentName ? `Inside ${parentName}.` : "At the top level of the project.", fields: [field], confirmLabel: "Create folder" })) return;
-    await runFolderAction(async () => {
-        const folder = await send(`${projectPath()}/folders`, "POST", { name: input.value, parentId: parent });
-        history.replaceState(null, "", pageLink({ folder: String(folder.id) }));
-        state.folder = String(folder.id);
-    }, `Created the folder ${input.value.trim()}.`);
-});
-
-$("rename-folder").addEventListener("click", async () => {
-    const folder = state.folders.find((f) => f.id === folderId());
-    const [field, input] = folderNameField(folder.name);
-    if (!await openDialog({ title: `Rename ${folder.name}`, text: "Image links stay the same.", fields: [field], confirmLabel: "Rename" })) return;
-    await runFolderAction(() => send(`${projectPath()}/folders/${folder.id}`, "PATCH", { name: input.value }), `Renamed the folder to ${input.value.trim()}.`);
-});
-
-$("move-folder").addEventListener("click", async () => {
-    const folder = state.folders.find((f) => f.id === folderId());
-    const select = element("select", {}, folderOptions(state.folders, {
-        noneLabel: "Top level", selected: folder.parentId ?? "", exclude: folderSubtree(state.folders, folder.id),
-    }));
-    const field = element("label", { class: "field" }, [element("span", { text: "Move into" }), select]);
-    if (!await openDialog({ title: `Move ${folder.name}`, text: "Its images and subfolders move along; links stay the same.", fields: [field], confirmLabel: "Move" })) return;
-    await runFolderAction(() => send(`${projectPath()}/folders/${folder.id}/move`, "POST", { parentId: select.value ? Number(select.value) : null }),
-        `Moved the folder ${folder.name}.`);
-});
-
-$("delete-folder").addEventListener("click", async () => {
-    const folder = state.folders.find((f) => f.id === folderId());
-    const parent = state.folders.find((f) => f.id === folder.parentId);
-    const target = parent ? `the folder ${parent.name}` : "the top level";
-    if (!await openDialog({
-        title: `Delete ${folder.name}?`,
-        text: `Its images and subfolders move to ${target}. Nothing is deleted from the project, and links stay the same.`,
-        confirmLabel: "Delete folder", danger: true,
-    })) return;
-    await runFolderAction(async () => {
-        await send(`${projectPath()}/folders/${folder.id}`, "DELETE");
-        state.folder = folder.parentId ? String(folder.parentId) : null;
-        history.replaceState(null, "", pageLink());
-    }, `Deleted the folder ${folder.name}.`);
-});
-
-// Moving images: drag them onto a folder in the sidebar, or select them and use "Move to folder".
+// Dragging images onto a tag in the sidebar tags them; dragged elsewhere they carry their public link.
 const dragType = "application/x-mdu-assets";
-
-async function moveAssets(ids, target, targetName) {
-    try {
-        const result = await send(`${projectPath()}/assets/move`, "POST", { ids, folderId: target });
-        state.selected.clear();
-        await loadFolders();
-        await loadAssets();
-        announce(`Moved ${plural(result.moved, "image", "images")} to ${targetName}.`);
-    } catch (error) {
-        announce(error.message);
-    }
-}
-
-function makeDropTarget(anchor, target, name) {
-    anchor.addEventListener("dragover", (event) => {
-        if (![...event.dataTransfer.types].includes(dragType)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        anchor.classList.add("is-drop-target");
-    });
-    anchor.addEventListener("dragleave", () => anchor.classList.remove("is-drop-target"));
-    anchor.addEventListener("drop", (event) => {
-        if (![...event.dataTransfer.types].includes(dragType)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        anchor.classList.remove("is-drop-target");
-        moveAssets(JSON.parse(event.dataTransfer.getData(dragType)), target, name);
-    });
-}
 
 function dragAssets(event, asset) {
     const ids = state.selected.has(asset.id) ? [...state.selected] : [asset.id];
@@ -325,15 +178,6 @@ function dragAssets(event, asset) {
     event.dataTransfer.setData("text/uri-list", asset.url);
     event.dataTransfer.effectAllowed = "copyMove";
 }
-
-$("move-selected").addEventListener("click", async () => {
-    const select = element("select", {}, folderOptions(state.folders, { noneLabel: "Not in a folder", selected: folderId() ?? "" }));
-    const field = element("label", { class: "field" }, [element("span", { text: "Folder" }), select]);
-    const count = state.selected.size;
-    if (!await openDialog({ title: `Move ${plural(count, "image", "images")}`, text: "Links stay the same.", fields: [field], confirmLabel: "Move" })) return;
-    const target = select.value ? Number(select.value) : null;
-    await moveAssets([...state.selected], target, target ? select.selectedOptions[0].textContent.trim() : "no folder");
-});
 
 $("clear-selection").addEventListener("click", () => {
     state.selected.clear();
@@ -402,8 +246,8 @@ function renderTags() {
     const editable = canEdit();
     const tags = state.facets?.tags ?? [];
     const item = (label, count, pressed, onClick, tag = null) => {
-        const button = element("button", { class: "folder-link", type: "button", "aria-pressed": String(pressed) },
-            [element("span", { class: "folder-name", text: label }), ...(count === null ? [] : [element("span", { class: "project-count", text: numberFormat.format(count) })])]);
+        const button = element("button", { class: "sidebar-link", type: "button", "aria-pressed": String(pressed) },
+            [element("span", { class: "sidebar-link-name", text: label }), ...(count === null ? [] : [element("span", { class: "project-count", text: numberFormat.format(count) })])]);
         button.addEventListener("click", onClick);
         if (editable && tag) makeTagDropTarget(button, tag);
         const children = [button];
@@ -504,7 +348,7 @@ $("tag-selected").addEventListener("click", async () => {
 });
 
 async function manageTag(tag) {
-    const [field, input] = folderNameField(tag);
+    const [field, input] = nameField(tag);
     input.maxLength = 50;
     // The name starts selected, so typing replaces it.
     input.addEventListener("focus", () => input.select(), { once: true });
@@ -554,8 +398,7 @@ function renderFilters() {
     $("filter-unused").value = filters.unused;
     $("filter-from").value = filters.from;
     $("filter-to").value = filters.to;
-    $("filter-subfolders").checked = filters.subfolders;
-    const active = ["tag", "type", "uploader", "unused", "from", "to"].filter((key) => filters[key]).length + (filters.subfolders && folderId() ? 1 : 0);
+    const active = ["type", "uploader", "unused", "from", "to"].filter((key) => filters[key]).length;
     $("filter-count").textContent = active ? ` (${active})` : "";
     if (active) $("filters").open = true;
 }
@@ -572,7 +415,6 @@ async function applyFilters() {
         unused: $("filter-unused").value,
         from: $("filter-from").value,
         to: $("filter-to").value,
-        subfolders: $("filter-subfolders").checked,
     };
     history.replaceState(null, "", pageLink());
     renderFilters();
@@ -620,7 +462,7 @@ $("search-input").addEventListener("paste", (event) => {
         openLink(text);
     }
 });
-for (const id of ["filter-type", "filter-uploader", "filter-unused", "filter-from", "filter-to", "filter-subfolders"])
+for (const id of ["filter-type", "filter-uploader", "filter-unused", "filter-from", "filter-to"])
     $(id).addEventListener("change", () => applyFilters());
 // Narrow screens hide the sidebar; the select in the filters adds a tag to the filter there.
 $("filter-tag").addEventListener("change", () => {
@@ -628,7 +470,6 @@ $("filter-tag").addEventListener("change", () => {
 });
 $("clear-filters").addEventListener("click", () => {
     for (const id of ["search-input", "filter-tag", "filter-type", "filter-uploader", "filter-unused", "filter-from", "filter-to"]) $(id).value = "";
-    $("filter-subfolders").checked = false;
     state.filters.tags = [];
     state.filters.untagged = false;
     applyFilters();
@@ -639,8 +480,6 @@ $("clear-filters").addEventListener("click", () => {
 function assetsPath(after) {
     const query = new URLSearchParams({ limit: "200" });
     if (after) query.set("after", after);
-    if (state.folder) query.set("folder", state.folder);
-    if (state.folder && state.folder !== "none" && state.filters.subfolders) query.set("subfolders", "true");
     for (const key of ["q", "type", "uploader", "unused"]) if (state.filters[key]) query.set(key, state.filters[key]);
     for (const tag of state.filters.tags) query.append("tag", tag);
     if (state.filters.untagged) query.set("untagged", "true");
@@ -740,7 +579,6 @@ function renderSelectionBar() {
     $("selection-bar").hidden = state.selected.size === 0;
     $("selection-count").textContent = `${plural(state.selected.size, "image", "images")} selected`;
     $("tag-selected").hidden = !canEdit();
-    $("move-selected").hidden = !canEdit();
     $("trash-selected").hidden = !canEdit();
 }
 
@@ -752,7 +590,7 @@ function renderAssets() {
     $("empty-state").hidden = assets.length > 0;
     if (!assets.length)
         $("empty-state").textContent = filtered() ? "No images match the search and filters."
-            : state.folder ? "This folder has no images." : editable ? "No images yet. Drop, paste or upload one." : "No images yet.";
+            : editable ? "No images yet. Drop, paste or upload one." : "No images yet.";
     $("load-more").hidden = !state.next;
 
     // Selected images that are no longer listed (after a search or move) drop out of the selection.
@@ -1113,13 +951,11 @@ function pastedName(file) {
 function upload(file, name, alt, { keepDuplicate = false, card = createCard(name) } = {}) {
     return new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
-        // Uploads land in the folder that is open.
-        const folder = folderId() ? `&folder=${folderId()}` : "";
         const duplicates = keepDuplicate ? "" : "&duplicates=reject";
         const lossless = losslessQuery() ? `&${losslessQuery()}` : "";
-        // Uploads get the tags the list is filtered by, as they land in the open folder.
+        // Uploads get the tags the list is filtered by, so they show up in the list that is open.
         const tags = state.filters.tags.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("");
-        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${folder}${duplicates}${lossless}${tags}`);
+        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${duplicates}${lossless}${tags}`);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.setRequestHeader("Accept", "application/json");
         xhr.responseType = "json";
@@ -1224,7 +1060,6 @@ async function refreshProjectCounts() {
     try {
         state.projects = (await request("/projects")).items;
         renderProjects();
-        await loadFolders();
         // New uploads can bring a new uploader or type into the filter lists.
         await loadFacets();
         renderFilters();
@@ -1268,7 +1103,7 @@ document.addEventListener("dragleave", (event) => {
     dragDepth = Math.max(0, dragDepth - 1);
     if (dragDepth === 0) dropZone.hidden = true;
 });
-// A dragged image that is dropped next to a folder must not make the browser open its link.
+// A dragged image that is dropped next to a tag must not make the browser open its link.
 document.addEventListener("dragover", (event) => {
     if ([...(event.dataTransfer?.types ?? [])].includes(dragType)) event.preventDefault();
 });
@@ -1288,7 +1123,7 @@ load().catch((error) => {
     $("empty-state").textContent = `Could not load the page: ${error.message}`;
 });
 
-// A page restored from the back-forward cache would show folders, tags and images as they were; load it fresh.
+// A page restored from the back-forward cache would show tags and images as they were; load it fresh.
 window.addEventListener("pageshow", (event) => {
     if (event.persisted) location.reload();
 });

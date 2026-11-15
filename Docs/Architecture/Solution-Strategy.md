@@ -8,7 +8,7 @@ description: The key approaches with which the MDU Asset Server reaches its qual
 | Quality goal | Approach |
 | --- | --- |
 | Usability | Upload by paste and drop anywhere in the project view; snippet ready and copied right after upload; alt text suggested from the file name; snippets for MDU features (light/dark pairs, frame, caption); keyboard shortcuts; integrations for `mdu` and upload tools. |
-| Link stability | Links contain only a random asset ID and a cosmetic file name ([ADR-0003](Architecture-Decisions/0003-Public-Link-Format.md)). Folders, projects, names and versions live in metadata. Replacing creates a new version under the same link. Deletion goes to a trash first. Migrations never change IDs; export and import keep them. |
+| Link stability | Links contain only a random asset ID and a cosmetic file name ([ADR-0003](Architecture-Decisions/0003-Public-Link-Format.md)). Tags, projects, names and versions live in metadata. Replacing creates a new version under the same link. Deletion goes to a trash first. Migrations never change IDs; export and import keep them. |
 | Security | Public host separate from the UI host ([ADR-0009](Architecture-Decisions/0009-Separate-Public-Host.md)); file type from content; SVG sanitized and served with a sandboxing CSP; metadata stripped from photos; roles checked in every endpoint; API tokens instead of passwords in tools; rate limiting; no personal data in statistics. |
 | Operational simplicity | One Native AOT process with SQLite and files in one data directory ([ADR-0005](Architecture-Decisions/0005-SQLite-and-Content-Addressed-Files.md)); one container; configuration through environment variables; backup command. |
 

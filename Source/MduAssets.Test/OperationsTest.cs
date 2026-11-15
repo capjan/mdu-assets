@@ -154,9 +154,7 @@ public sealed class OperationsTest : IDisposable
     {
         var source = Server();
         var admin = source.Ui();
-        var folder = await (await admin.PostAsJsonAsync("/api/v1/projects/default/folders", new NewFolder("Screens", null), Json, Cancel))
-            .Content.ReadFromJsonAsync<FolderResponse>(Json, Cancel);
-        var light = await Upload(admin, $"settings-light.png?folder={folder!.Id}".Replace("?", "&", StringComparison.Ordinal), 60);
+        var light = await Upload(admin, "settings-light.png", 60);
         var dark = await Upload(admin, "settings-dark.png", 61);
         await admin.PatchAsJsonAsync($"/api/v1/assets/{light.Id}", new AssetChanges(null, "Settings", "The settings dialog", ["ui"]), Json, Cancel);
         await admin.PutAsJsonAsync($"/api/v1/assets/{light.Id}/pair", new PairChange(dark.Id, "light"), Json, Cancel);
@@ -174,7 +172,6 @@ public sealed class OperationsTest : IDisposable
         var copy = await target.Ui().GetFromJsonAsync<AssetResponse>($"/api/v1/assets/{light.Id}", Json, Cancel);
         Assert.Equal(("docs", "The settings dialog", dark.Id), (copy!.Project, copy.Description, copy.Pair!.Id));
         Assert.Equal(["ui"], copy.Tags);
-        Assert.NotNull(copy.FolderId);
         Assert.Equal(2, (await target.Ui().GetFromJsonAsync<VersionList>($"/api/v1/assets/{dark.Id}/versions", Json, Cancel))!.Items.Count);
         Assert.Equal(await source.Public().GetByteArrayAsync(light.Url, Cancel), await target.Public().GetByteArrayAsync(copy.Url, Cancel));
 

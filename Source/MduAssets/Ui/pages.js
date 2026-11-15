@@ -100,7 +100,7 @@ export async function showSettings(project, me) {
 
     const empty = project.assetCount === 0;
     $("delete-hint").textContent = empty
-        ? `Deleting the project removes its members and folders${project.trashCount ? ` and deletes the ${plural(project.trashCount, "image", "images")} in its trash for good` : ""}. This cannot be undone.`
+        ? `Deleting the project removes its members and tags${project.trashCount ? ` and deletes the ${plural(project.trashCount, "image", "images")} in its trash for good` : ""}. This cannot be undone.`
         : `The project has ${plural(project.assetCount, "image", "images")} in use. Move them to the trash first; the trash is emptied with the project.`;
     const confirm = $("delete-confirm");
     confirm.disabled = !empty;

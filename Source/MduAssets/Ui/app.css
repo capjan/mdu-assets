@@ -703,11 +703,11 @@ a.secondary-button { text-decoration: none; }
 .server-info dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 /* Folders, search, selection and details (M4) */
-.folder-nav { margin-top: 1.5rem; }
+.sidebar-section { margin-top: 1.5rem; }
 
-.folder-tree { margin: 0; padding: 0; list-style: none; }
+.sidebar-list { margin: 0; padding: 0; list-style: none; }
 
-.folder-link {
+.sidebar-link {
     display: flex;
     justify-content: space-between;
     gap: 0.5rem;
@@ -721,31 +721,15 @@ a.secondary-button { text-decoration: none; }
     transition: color 120ms ease, background-color 120ms ease;
 }
 
-.folder-link:hover { color: var(--text-primary); background: var(--hover-background); }
+.sidebar-link:hover { color: var(--text-primary); background: var(--hover-background); }
 
-.folder-link[aria-current="page"] { color: var(--text-primary); font-weight: 600; }
+.sidebar-link[aria-current="page"] { color: var(--text-primary); font-weight: 600; }
 
-.folder-link:focus-visible { border-radius: 6px; outline-offset: -2px; }
+.sidebar-link:focus-visible { border-radius: 6px; outline-offset: -2px; }
 
-.folder-link.is-drop-target { border-color: var(--link); background: var(--alert-note-background); color: var(--text-primary); }
+.sidebar-link.is-drop-target { border-color: var(--link); background: var(--alert-note-background); color: var(--text-primary); }
 
-.folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.folder-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin: 0 0 1rem; }
-
-.folder-path ol { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; list-style: none; font-size: 0.9rem; }
-
-.folder-path li + li::before { content: "/"; margin-right: 0.25rem; color: var(--text-secondary); }
-
-.folder-path a { color: var(--link); }
-
-.folder-path a:focus-visible { border-radius: 2px; }
-
-.folder-path [aria-current] { font-weight: 600; }
-
-.folder-select { display: none; }
-
-.folder-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-left: auto; }
+.sidebar-link-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .search-form { display: grid; gap: 0.5rem; margin: 0 0 1rem; }
 
@@ -1124,8 +1108,6 @@ kbd {
     .toolbar-hint { flex-basis: 100%; order: 3; }
     .snippet-card { grid-template-columns: 4rem minmax(0, 1fr); gap: 0.75rem; }
     .snippet-preview { width: 4rem; height: 3.25rem; }
-    .folder-actions { margin-left: 0; }
-    .folder-select { display: block; max-width: 100%; }
 }
 
 @media (pointer: coarse) {
@@ -1326,7 +1308,7 @@ html:has(.image-lightbox[open]) { overflow: hidden; }
 /* Tags in the sidebar (ORG-03): a filter button per tag, pressed when it filters, and a menu button for editors. */
 .tag-item { display: flex; align-items: center; gap: 0.15rem; }
 
-.tag-item .folder-link {
+.tag-item .sidebar-link {
     flex: 1;
     min-width: 0;
     width: 100%;
@@ -1337,7 +1319,7 @@ html:has(.image-lightbox[open]) { overflow: hidden; }
     cursor: pointer;
 }
 
-.tag-item .folder-link[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-current); font-weight: 600; }
+.tag-item .sidebar-link[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-current); font-weight: 600; }
 
 .tag-manage { flex: none; width: 1.75rem; height: 1.75rem; color: var(--text-secondary); opacity: 0; }
 

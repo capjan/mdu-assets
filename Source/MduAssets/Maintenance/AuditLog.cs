@@ -4,7 +4,7 @@ using MduAssets.Storage;
 namespace MduAssets.Maintenance;
 
 /// <summary>
-/// Writes an audit entry for every successful change made through the API (OPS-03): uploads, versions, moves, renames,
+/// Writes an audit entry for every successful change made through the API (OPS-03): uploads, versions, tag changes, renames,
 /// metadata, trash and restore, members, tokens, users and settings. Recording all changes in one place means no endpoint can
 /// forget it; sign-ins are written by the authentication handler.
 /// </summary>
@@ -14,7 +14,6 @@ public static class AuditLog
     private static readonly Dictionary<string, string> Actions = new(StringComparer.Ordinal)
     {
         ["POST /api/v1/projects/{project}/assets"] = "asset.upload",
-        ["POST /api/v1/projects/{project}/assets/move"] = "asset.move",
         ["PATCH /api/v1/assets/{id}"] = "asset.update",
         ["PUT /api/v1/assets/{id}/pair"] = "asset.pair",
         ["DELETE /api/v1/assets/{id}/pair"] = "asset.unpair",
@@ -25,10 +24,9 @@ public static class AuditLog
         ["POST /api/v1/assets/{id}/restore"] = "asset.restore",
         ["DELETE /api/v1/projects/{project}/trash"] = "trash.empty",
         ["DELETE /api/v1/projects/{project}/trash/{id}"] = "asset.purge",
-        ["POST /api/v1/projects/{project}/folders"] = "folder.create",
-        ["PATCH /api/v1/projects/{project}/folders/{id:long}"] = "folder.rename",
-        ["POST /api/v1/projects/{project}/folders/{id:long}/move"] = "folder.move",
-        ["DELETE /api/v1/projects/{project}/folders/{id:long}"] = "folder.delete",
+        ["POST /api/v1/projects/{project}/assets/tags"] = "asset.tags",
+        ["PATCH /api/v1/projects/{project}/tags"] = "tag.rename",
+        ["DELETE /api/v1/projects/{project}/tags"] = "tag.delete",
         ["POST /api/v1/projects"] = "project.create",
         ["POST /api/v1/projects/import"] = "project.import",
         ["PATCH /api/v1/projects/{project}"] = "project.update",

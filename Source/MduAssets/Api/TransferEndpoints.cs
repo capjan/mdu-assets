@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MduAssets.Imaging;
 using MduAssets.Security;
 using MduAssets.Storage;
@@ -9,15 +10,23 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace MduAssets.Api;
 
-public sealed record ExportManifest(int Format, DateTimeOffset ExportedAt, bool AllVersions, ExportProject Project, IReadOnlyList<ExportFolder> Folders, IReadOnlyList<ExportAsset> Assets);
+/// <summary>
+/// The manifest of a project export. Format 2 organizes images with tags only; format 1 also had folders, which an import
+/// turns into tags (ADR-0020), so they are only read.
+/// </summary>
+public sealed record ExportManifest(
+    int Format, DateTimeOffset ExportedAt, bool AllVersions, ExportProject Project, IReadOnlyList<ExportAsset> Assets,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ExportFolder>? Folders = null);
 
 public sealed record ExportProject(string Slug, string Name, string Description, bool ConvertFormats, int? MaxVersions);
 
+/// <summary>A folder of a format 1 export.</summary>
 public sealed record ExportFolder(long Id, long? ParentId, string Name);
 
 public sealed record ExportAsset(
-    string Id, long? FolderId, string FileName, string AltText, string Description, IReadOnlyList<string> Tags,
-    string? PairId, string? PairRole, string UploadedBy, DateTimeOffset CreatedAt, int CurrentVersion, IReadOnlyList<ExportVersion> Versions);
+    string Id, string FileName, string AltText, string Description, IReadOnlyList<string> Tags,
+    string? PairId, string? PairRole, string UploadedBy, DateTimeOffset CreatedAt, int CurrentVersion, IReadOnlyList<ExportVersion> Versions,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? FolderId = null);
 
 /// <summary>
 /// One version in an export. <c>OriginalContentType</c> and <c>OriginalSize</c> describe the upload of a converted version (UP-11);
@@ -39,7 +48,7 @@ public sealed record ImportResult(ProjectResponse Project, int Assets, IReadOnly
 public static class TransferEndpoints
 {
     public const string ManifestName = "mdu-assets-export.json";
-    private const int Format = 1;
+    private const int Format = 2;
 
     public static void Map(RouteGroupBuilder api)
     {
@@ -49,7 +58,7 @@ public static class TransferEndpoints
 
     /// <summary>Exports the images in use with the current version, or all versions with <c>?versions=all</c>; the trash stays out.</summary>
     private static Results<FileStreamHttpResult, ProblemHttpResult> Export(
-        string project, string? versions, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, FolderStore folders,
+        string project, string? versions, ClaimsPrincipal user, ProjectAccess access, AssetStore assets,
         BlobStore blobs, DataDirectory data)
     {
         if (!access.TryGet(user, project, ProjectRole.Owner, out var target, out var problem))
@@ -63,15 +72,14 @@ public static class TransferEndpoints
             var kept = assets.Versions(asset.Id).Where(v => all || v.Number == asset.Version).OrderBy(v => v.Number).ToList();
             files.UnionWith(kept.Select(v => v.BlobSha256));
             files.UnionWith(kept.Where(v => v.Original?.BlobSha256 is not null).Select(v => v.Original!.BlobSha256!));
-            exported.Add(new ExportAsset(asset.Id, asset.FolderId, asset.FileName, asset.AltText, asset.Description, asset.Tags,
+            exported.Add(new ExportAsset(asset.Id, asset.FileName, asset.AltText, asset.Description, asset.Tags,
                 asset.PairId, asset.PairRole, asset.UploadedBy, asset.CreatedAt, asset.Version,
                 kept.Select(v => new ExportVersion(v.Number, v.BlobSha256, v.ContentType, v.Size, v.Width, v.Height, v.Animated, v.CreatedBy, v.CreatedAt,
                     v.Original?.BlobSha256, v.Original?.ContentType, v.Original?.Size)).ToList()));
         }
 
         var manifest = new ExportManifest(Format, DateTimeOffset.UtcNow, all,
-            new ExportProject(target.Slug, target.Name, target.Description, target.ConvertFormats, target.MaxVersions),
-            folders.List(target.Id).Select(f => new ExportFolder(f.Id, f.ParentId, f.Name)).ToList(), exported);
+            new ExportProject(target.Slug, target.Name, target.Description, target.ConvertFormats, target.MaxVersions), exported);
 
         // The zip goes to a temporary file first: the archive is written synchronously, which Kestrel does not allow on the response.
         var path = Path.Combine(data.TempPath, $"export-{Guid.NewGuid():N}.zip");
@@ -92,7 +100,7 @@ public static class TransferEndpoints
     /// they are free; the answer lists those that had to change.
     /// </summary>
     private static async Task<Results<Created<ImportResult>, ProblemHttpResult>> Import(
-        string? slug, HttpContext context, ProjectStore projects, AssetStore assets, FolderStore folders, BlobStore blobs,
+        string? slug, HttpContext context, ProjectStore projects, AssetStore assets, BlobStore blobs,
         SettingsStore settingsStore, DataDirectory data, ServerSettings settings, CancellationToken cancellationToken)
     {
         var user = context.User;
@@ -115,7 +123,7 @@ public static class TransferEndpoints
                 }
             }
 
-            return await ImportFile(path, slug, user, projects, assets, folders, blobs, settings, cancellationToken);
+            return await ImportFile(path, slug, user, projects, assets, blobs, settings, cancellationToken);
         }
         catch (InvalidDataException exception)
         {
@@ -132,7 +140,7 @@ public static class TransferEndpoints
     }
 
     private static async Task<Results<Created<ImportResult>, ProblemHttpResult>> ImportFile(
-        string path, string? slug, ClaimsPrincipal user, ProjectStore projects, AssetStore assets, FolderStore folders, BlobStore blobs,
+        string path, string? slug, ClaimsPrincipal user, ProjectStore projects, AssetStore assets, BlobStore blobs,
         ServerSettings settings, CancellationToken cancellationToken)
     {
         using var zip = ZipFile.OpenRead(path);
@@ -141,8 +149,8 @@ public static class TransferEndpoints
         await using (var stream = manifestEntry.Open())
             manifest = await JsonSerializer.DeserializeAsync(stream, AppJsonContext.Default.ExportManifest, cancellationToken)
                 ?? throw new InvalidDataException("The manifest is empty.");
-        if (manifest.Format != Format)
-            return Problem(StatusCodes.Status400BadRequest, "Unknown export format", $"This server reads export format {Format}, not {manifest.Format}.");
+        if (manifest.Format is not (1 or Format))
+            return Problem(StatusCodes.Status400BadRequest, "Unknown export format", $"This server reads export formats 1 and {Format}, not {manifest.Format}.");
 
         var newSlug = (slug ?? manifest.Project.Slug).Trim();
         if (!ProjectSlugs.IsValid(newSlug))
@@ -185,18 +193,8 @@ public static class TransferEndpoints
         var project = projects.Create(newSlug, name.Length > 100 ? name[..100] : name, manifest.Project.Description ?? string.Empty, user.Id());
         projects.Update(project.Id, project.Name, project.Description, manifest.Project.ConvertFormats, manifest.Project.MaxVersions, null, null);
 
-        // Folders parent first; the export lists them flat with their parent ids.
-        var folderIds = new Dictionary<long, long>();
-        var pending = manifest.Folders.ToList();
-        while (pending.Count > 0)
-        {
-            var ready = pending.Where(f => f.ParentId is null || folderIds.ContainsKey(f.ParentId.Value)).ToList();
-            if (ready.Count == 0)
-                throw new InvalidDataException("The folders of the export do not form a tree.");
-            foreach (var folder in ready)
-                folderIds[folder.Id] = folders.Create(project.Id, folder.ParentId is { } parent ? folderIds[parent] : null, folder.Name).Id;
-            pending.RemoveAll(ready.Contains);
-        }
+        // A format 1 export has folders: each image gets its folder and the folders above it as tags.
+        var folderTags = FolderTags(manifest.Folders ?? []);
 
         var ids = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var asset in manifest.Assets)
@@ -215,9 +213,10 @@ public static class TransferEndpoints
                 return new ImportedVersion(v.Number, file.Hash, file.Info.ContentType, file.Size, file.Info.Width, file.Info.Height, v.Animated, v.CreatedAt, original);
             }).ToList();
             var current = versions.Any(v => v.Number == asset.CurrentVersion) ? asset.CurrentVersion : versions.Max(v => v.Number);
+            var tags = asset.FolderId is { } folderId && folderTags.TryGetValue(folderId, out var fromFolders) ? [.. asset.Tags, .. fromFolders] : asset.Tags;
+            var (cleanTags, _) = TagNames.Normalize(tags);
             ids[asset.Id] = assets.Import(asset.Id, new ImportedAsset(project.Id,
-                asset.FolderId is { } folderId && folderIds.TryGetValue(folderId, out var mapped) ? mapped : null,
-                asset.FileName, asset.AltText, asset.Description, asset.Tags, current, versions, user.Id(), asset.CreatedAt));
+                asset.FileName, asset.AltText, asset.Description, (cleanTags ?? []).Take(TagNames.MaxPerAsset).ToList(), current, versions, user.Id(), asset.CreatedAt));
         }
 
         foreach (var asset in manifest.Assets.Where(a => a is { PairId: not null, PairRole: "light" }))
@@ -227,6 +226,27 @@ public static class TransferEndpoints
         var changed = ids.Where(pair => pair.Key != pair.Value).Select(pair => new IdChange(pair.Key, pair.Value)).ToList();
         var summary = ProjectResponse.From(projects.List(user.Id(), all: true, project.Id).Single(), user.IsAdmin());
         return TypedResults.Created($"/api/v1/projects/{project.Slug}", new ImportResult(summary, ids.Count, changed));
+    }
+
+    /// <summary>The names of every folder and the folders above it, by folder id; a folder list that is not a tree is refused.</summary>
+    private static Dictionary<long, List<string>> FolderTags(IReadOnlyList<ExportFolder> folders)
+    {
+        var byId = folders.ToDictionary(f => f.Id);
+        var result = new Dictionary<long, List<string>>();
+        foreach (var folder in folders)
+        {
+            var names = new List<string>();
+            var seen = new HashSet<long>();
+            for (ExportFolder? current = folder; current is not null; current = current.ParentId is { } parent ? byId.GetValueOrDefault(parent) : null)
+            {
+                if (!seen.Add(current.Id))
+                    throw new InvalidDataException("The folders of the export do not form a tree.");
+                names.Add(current.Name.Length > TagNames.MaxLength ? current.Name[..TagNames.MaxLength] : current.Name);
+            }
+            result[folder.Id] = names;
+        }
+
+        return result;
     }
 
     private static ProblemHttpResult Problem(int status, string title, string detail) =>

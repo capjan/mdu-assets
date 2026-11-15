@@ -12,7 +12,6 @@ namespace MduAssets.Api;
 public sealed record AssetResponse(
     string Id,
     string Project,
-    long? FolderId,
     string Url,
     string FileName,
     string AltText,
@@ -51,7 +50,7 @@ public sealed record AssetResponse(
         }
 
         return new AssetResponse(
-            asset.Id, asset.ProjectSlug, asset.FolderId, url, asset.FileName, asset.AltText, asset.Description, asset.Tags,
+            asset.Id, asset.ProjectSlug, url, asset.FileName, asset.AltText, asset.Description, asset.Tags,
             Snippets.Markdown(asset.AltText, url), Snippets.Html(asset.AltText, url, asset.Width, asset.Height),
             asset.Width, asset.Height, asset.Size, asset.ContentType, asset.BlobSha256, asset.Version, asset.UploadedBy, asset.CreatedAt,
             $"/api/v1/assets/{asset.Id}/thumbnail?v={asset.BlobSha256[..12]}", asset.Animated, pair,
@@ -95,27 +94,8 @@ public sealed record DuplicateResponse(string Title, string Detail, AssetRespons
 /// <summary>One page of assets; <c>Next</c> is set when another page follows.</summary>
 public sealed record AssetList(IReadOnlyList<AssetResponse> Items, string? Next);
 
-/// <summary>
-/// Changes to an asset; properties left out stay as they are. <c>Folder</c> is a folder id or <c>none</c>, so a change and the
-/// folder land together.
-/// </summary>
-public sealed record AssetChanges(string? FileName, string? AltText, string? Description = null, IReadOnlyList<string>? Tags = null, string? Folder = null);
-
-/// <summary>Moves assets into a folder, or out of all folders when <c>FolderId</c> is <c>null</c>.</summary>
-public sealed record AssetMove(IReadOnlyList<string>? Ids, long? FolderId);
-
-public sealed record AssetMoveResult(int Moved);
-
-public sealed record FolderResponse(long Id, long? ParentId, string Name, int AssetCount);
-
-public sealed record FolderList(IReadOnlyList<FolderResponse> Items);
-
-public sealed record NewFolder(string? Name, long? ParentId);
-
-public sealed record FolderChanges(string? Name);
-
-/// <summary>Moves a folder under another one, or to the top level when <c>ParentId</c> is <c>null</c>.</summary>
-public sealed record FolderMove(long? ParentId);
+/// <summary>Changes to an asset; properties left out stay as they are.</summary>
+public sealed record AssetChanges(string? FileName, string? AltText, string? Description = null, IReadOnlyList<string>? Tags = null);
 
 public sealed record TagCountResponse(string Name, int Count);
 
@@ -224,13 +204,6 @@ public sealed record ServerInfo(string UiBaseUrl, string PublicBaseUrl, long Max
 [JsonSerializable(typeof(PurgeResult))]
 [JsonSerializable(typeof(ReferrerList))]
 [JsonSerializable(typeof(DuplicateResponse))]
-[JsonSerializable(typeof(AssetMove))]
-[JsonSerializable(typeof(AssetMoveResult))]
-[JsonSerializable(typeof(FolderResponse))]
-[JsonSerializable(typeof(FolderList))]
-[JsonSerializable(typeof(NewFolder))]
-[JsonSerializable(typeof(FolderChanges))]
-[JsonSerializable(typeof(FolderMove))]
 [JsonSerializable(typeof(FacetsResponse))]
 [JsonSerializable(typeof(TagChange))]
 [JsonSerializable(typeof(TagChangeResult))]

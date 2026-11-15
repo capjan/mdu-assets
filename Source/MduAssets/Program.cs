@@ -75,7 +75,6 @@ builder.Services.AddSingleton<AuditStore>();
 builder.Services.AddSingleton<SignInThrottle>();
 builder.Services.AddSingleton<NotFoundThrottle>();
 builder.Services.AddSingleton<AssetStore>();
-builder.Services.AddSingleton<FolderStore>();
 builder.Services.AddSingleton<VariantStore>();
 builder.Services.AddSingleton<ImageJobs>();
 builder.Services.AddSingleton<Variants>();
@@ -156,7 +155,6 @@ app.MapMethods("/i/{id}/{**name}", ["GET", "HEAD"], PublicLinks.Serve).RequireHo
 var api = app.MapGroup("/api/v1").RequireHost(settings.UiHost).RequireAuthorization();
 var admin = api.MapGroup("").RequireAuthorization(policy => policy.RequireRole(BasicAuthenticationHandler.AdminRole)).RequirePassword();
 AssetEndpoints.Map(api);
-FolderEndpoints.Map(api);
 TagEndpoints.Map(api);
 LifecycleEndpoints.Map(api);
 ProjectEndpoints.Map(api);

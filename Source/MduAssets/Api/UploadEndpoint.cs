@@ -7,8 +7,7 @@ namespace MduAssets.Api;
 
 /// <summary>
 /// <c>POST /api/v1/projects/{project}/assets</c>: uploads one image (API-04, see <see cref="UploadReceiver"/>).
-/// <c>?folder=</c> puts it into a folder, <c>?tag=</c> (repeatable) tags it, <c>?duplicates=reject</c> reports content that is
-/// already in the project (UP-09).
+/// <c>?tag=</c> (repeatable) tags it, <c>?duplicates=reject</c> reports content that is already in the project (UP-09).
 /// </summary>
 public static class UploadEndpoint
 {
@@ -18,7 +17,6 @@ public static class UploadEndpoint
         AssetStore assets,
         BlobStore blobs,
         ProjectAccess access,
-        FolderStore folders,
         ImageJobs jobs,
         Variants variants,
         ProjectStore projects,
@@ -28,12 +26,6 @@ public static class UploadEndpoint
     {
         if (!access.TryGet(context.User, project, ProjectRole.Editor, out var target, out var problem))
             return problem;
-
-        // ?folder=<id> files the upload into a folder of the project (ORG-01).
-        var folderText = context.Request.Query["folder"].ToString();
-        var folder = FolderEndpoints.ParseFolder(folderText.Length == 0 ? null : folderText, target.Id, folders);
-        if (folder.Problem is { } folderProblem)
-            return folderProblem;
 
         var (tags, tagError) = TagNames.Normalize(context.Request.Query["tag"]);
         if (tagError is not null)
@@ -55,7 +47,7 @@ public static class UploadEndpoint
 
         var fileName = FileNames.Normalize(image.Name, info.Extension);
         var altText = string.IsNullOrWhiteSpace(image.Alt) ? FileNames.SuggestAltText(image.Name) : image.Alt.Trim();
-        var asset = assets.Create(new NewAsset(target.Id, folder.Id, fileName, altText, blob.Hash, info.ContentType, blob.Size,
+        var asset = assets.Create(new NewAsset(target.Id, fileName, altText, blob.Hash, info.ContentType, blob.Size,
             info.Width, info.Height, context.User.Id(), image.Animated, image.Original));
 
         if (tags is { Count: > 0 })

@@ -16,8 +16,8 @@ Der Server ergänzt lokale Bilder in MDU-Projekten, er ersetzt sie nicht. Markdo
 | Asset-ID | Kurze, zufällige, nicht erratbare ID (Base62), die das Asset dauerhaft identifiziert |
 | Öffentlicher Link | `https://<public-host>/i/<asset-id>/<dateiname>` – ändert sich nie |
 | Version | Ein konkreter Dateiinhalt eines Assets; neue Versionen ersetzen den Inhalt unter demselben Link |
-| Projekt | Container für Assets und Ordner, mit eigenen Mitgliedern |
-| Ordner | Rein organisatorische Gruppierung innerhalb eines Projekts; beeinflusst den Link nicht |
+| Projekt | Container für Assets, mit eigenen Mitgliedern |
+| Tag | Freies Schlagwort an einem Asset; ein Asset kann mehrere haben. Ordnet und filtert, beeinflusst den Link nicht. Tags ersetzen die früheren Ordner ([ADR-0020](Architecture/Architecture-Decisions/0020-Tags-Instead-of-Folders.md)). |
 | Snippet | Kopierfertiger Text für ein Asset, z. B. Markdown-Bild mit Alt-Text |
 | Hell/Dunkel-Paar | Zwei Assets, die als Light- und Dark-Variante desselben Bildes verknüpft sind |
 
@@ -42,7 +42,7 @@ Der Server ergänzt lokale Bilder in MDU-Projekten, er ersetzt sie nicht. Markdo
 | UI-Technik | Eingebettetes statisches HTML/CSS + Vanilla JavaScript, das die JSON-API nutzt |
 | Design | `tokens.css` aus dem MDU-Design-System übernehmen; ein Test prüft, dass die Kopie aktuell ist |
 | UI-Sprache | Englisch, wie MDU |
-| Ordnen und Finden | Verschachtelte Ordner, Tags, Suche und Filter, Rückwärtssuche über die URL |
+| Ordnen und Finden | Tags (mehrere pro Bild), Suche und Filter, Rückwärtssuche über die URL |
 | Limits | Max. Dateigröße, Speicherquote pro Projekt, Rate Limiting, Audit-Log |
 | Betrieb | Docker-Image `capjan/mdu-assets`, native Binaries, eigenes Repository, Projekt-Export/-Import |
 | Erste Version | Enthält alle oben genannten Punkte außer den als „später“ markierten Anmeldearten |
@@ -60,9 +60,9 @@ Der Server ergänzt lokale Bilder in MDU-Projekten, er ersetzt sie nicht. Markdo
 
 | Aktion | Viewer | Editor | Owner |
 | --- | :-: | :-: | :-: |
-| Assets, Ordner, Statistiken ansehen, Snippets kopieren | ✓ | ✓ | ✓ |
+| Assets, Tags, Statistiken ansehen, Snippets kopieren | ✓ | ✓ | ✓ |
 | Hochladen, ersetzen, Metadaten bearbeiten, verschieben, taggen | | ✓ | ✓ |
-| Ordner anlegen, umbenennen, löschen | | ✓ | ✓ |
+| Tags vergeben, umbenennen, zusammenführen, löschen | | ✓ | ✓ |
 | Assets in den Papierkorb legen und wiederherstellen | | ✓ | ✓ |
 | Mitglieder hinzufügen, Rollen ändern, entfernen | | | ✓ |
 | Projekt umbenennen, exportieren, löschen | | | ✓ |
@@ -120,7 +120,7 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 
 | ID | Anforderung | Prio |
 | --- | --- | :-: |
-| LNK-01 | Jedes Asset hat einen dauerhaften Link `/i/<asset-id>/<dateiname>`. Verschieben, Umbenennen von Ordnern oder Projekten und neue Versionen ändern ihn nicht. | M |
+| LNK-01 | Jedes Asset hat einen dauerhaften Link `/i/<asset-id>/<dateiname>`. Tags, Umbenennen von Projekten und neue Versionen ändern ihn nicht. | M |
 | LNK-02 | `/i/<asset-id>` und `/i/<asset-id>/<beliebiger-name>` liefern dieselbe Datei. Nach einer Umbenennung funktionieren alte Links weiter. | M |
 | LNK-03 | Asset-IDs sind mindestens 10 Zeichen Base62 aus einem kryptografischen Zufallsgenerator und nicht fortlaufend. | M |
 | LNK-04 | Die öffentliche Basis-URL ist konfigurierbar und darf ein anderer Host als die Verwaltungs-UI sein (empfohlen, z. B. `img.example.com` und `assets.example.com`), damit ausgelieferte Dateien keinen Zugriff auf UI-Cookies haben. | M |
@@ -147,10 +147,10 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 
 | ID | Anforderung | Prio |
 | --- | --- | :-: |
-| ORG-01 | Verschachtelte Ordner pro Projekt: anlegen, umbenennen, verschieben, löschen (nur leer oder mit Bestätigung, Inhalt wandert in den übergeordneten Ordner oder den Papierkorb). | M |
-| ORG-02 | Assets lassen sich einzeln und als Mehrfachauswahl per Drag & Drop oder Menü in Ordner verschieben. Die Ordnerstruktur erscheint als Baum in der Seitenleiste, wie die Navigation einer MDU-Site. | M |
+| ORG-01 | *Entfallen:* verschachtelte Ordner. Tags ersetzen sie; beim Update werden der Ordner eines Bildes und alle darüber zu Tags ([ADR-0020](Architecture/Architecture-Decisions/0020-Tags-Instead-of-Folders.md)). | – |
+| ORG-02 | Die Seitenleiste zeigt die Tags des Projekts mit ihrer Anzahl; ein Klick filtert danach, mehrere Tags grenzen weiter ein. Bilder werden einzeln und als Mehrfachauswahl per Drag & Drop auf einen Tag oder über „Tags…“ getaggt. | M |
 | ORG-03 | Freie Tags pro Asset, mit Vorschlägen aus den im Projekt vorhandenen Tags. Mehrere Bilder lassen sich auf einmal taggen (Auswahl oder Ziehen auf einen Tag in der Seitenleiste); Tags lassen sich im ganzen Projekt umbenennen, zusammenführen und löschen. Uploads bekommen die Tags, nach denen gerade gefiltert wird. | M |
-| ORG-04 | Suche über Dateiname, Alt-Text, Beschreibung und Tags, schon während der Eingabe; Filter nach Ordner (mit/ohne Unterordner), einem oder mehreren Tags (alle müssen zutreffen) oder „ohne Tags“, Dateityp, Upload-Zeitraum, Uploader und „nie abgerufen“ / „seit N Tagen nicht abgerufen“. | M |
+| ORG-04 | Suche über Dateiname, Alt-Text, Beschreibung und Tags, schon während der Eingabe; Filter nach einem oder mehreren Tags (alle müssen zutreffen) oder „ohne Tags“, Dateityp, Upload-Zeitraum, Uploader und „nie abgerufen“ / „seit N Tagen nicht abgerufen“. | M |
 | ORG-05 | Projektansicht als Kachelraster (Vorschau, Name, Größe, Abrufe) und als Liste mit sortierbaren Spalten (Name, Größe, Abmessungen, Upload, letzter Abruf, Abrufe). | M |
 | ORG-06 | Detailansicht: große Vorschau (hell/dunkel Hintergrund umschaltbar, per Klick oder Tastatur im Bildbetrachter von MDU mit Zoom und Verschieben), alle Snippets, Metadaten (Typ, Abmessungen, Größe, Hash, Uploader, Datum), Versionen, Statistik, verweisende Seiten, Hell/Dunkel-Partner. | M |
 | ORG-07 | Tastaturbedienung: Pfeiltasten im Raster und in der Liste, auch ohne vorher ein Bild zu fokussieren und mit ++down++ aus dem Suchfeld, ++enter++ öffnet die Details, ++c++ kopiert das Markdown-Snippet des ausgewählten Assets, ++delete++ legt in den Papierkorb. | S |
@@ -196,17 +196,17 @@ Skizze der Endpunkte:
 
 | Methode und Pfad | Zweck |
 | --- | --- |
-| `POST /api/v1/projects/{project}/assets` | Hochladen (optional `folder`, `alt`, `tags`) |
+| `POST /api/v1/projects/{project}/assets` | Hochladen (optional `alt`, `tag`, wiederholbar) |
 | `GET /api/v1/projects/{project}/assets` | Liste mit Suche, Filter, Sortierung, Seitenweise |
 | `GET /api/v1/assets/{id}` | Metadaten, Snippets, Statistik-Kurzform |
-| `PATCH /api/v1/assets/{id}` | Name, Alt-Text, Beschreibung, Tags, Ordner, Hell/Dunkel-Partner |
+| `PATCH /api/v1/assets/{id}` | Name, Alt-Text, Beschreibung, Tags, Hell/Dunkel-Partner |
 | `PUT /api/v1/assets/{id}/content` | Neue Version hochladen |
 | `GET /api/v1/assets/{id}/versions` · `POST …/versions/{n}/restore` | Versionen |
 | `GET /api/v1/assets/{id}/stats` | Zähler, letzter Abruf, verweisende Seiten |
 | `DELETE /api/v1/assets/{id}` · `POST /api/v1/assets/{id}/restore` | Papierkorb |
 | `POST /api/v1/assets/lookup` | Rückwärtssuche (angemeldet) |
 | `POST /api/v1/public/check` | Existenzprüfung für Lint (öffentlich) |
-| `…/projects`, `…/projects/{project}/folders`, `…/projects/{project}/members` | Projekte, Ordner, Mitglieder |
+| `…/projects`, `…/projects/{project}/tags`, `…/projects/{project}/assets/tags`, `…/projects/{project}/members` | Projekte, Tags, Mitglieder |
 | `…/me`, `…/me/tokens` | Eigenes Profil und Tokens |
 | `…/admin/users`, `…/admin/audit`, `…/admin/settings` | Verwaltung |
 | `GET /api/v1/projects/{project}/export` · `POST /api/v1/projects/import` | Export/Import |
@@ -218,7 +218,7 @@ Diese Anforderungen betreffen das Repository `capjan/mdu`.
 | ID | Anforderung | Prio |
 | --- | --- | :-: |
 | CLI-01 | `mdu.yml` erhält einen Abschnitt `assets` mit `server` (Basis-URL der API), `public` (öffentliche Basis-URL, falls abweichend) und `project` (Standardprojekt). Das Token kommt aus der Umgebungsvariable `MDU_ASSETS_TOKEN`, nie aus `mdu.yml`. | M |
-| CLI-02 | `mdu assets upload <datei>… [--project] [--folder] [--alt] [--format markdown\|url\|html]` lädt Dateien hoch und gibt pro Datei das Snippet als Klartext aus, damit es sich pipen lässt. Bei `-` liest der Befehl von stdin. | M |
+| CLI-02 | `mdu assets upload <datei>… [--project] [--tag] [--alt] [--format markdown\|url\|html]` lädt Dateien hoch und gibt pro Datei das Snippet als Klartext aus, damit es sich pipen lässt. Bei `-` liest der Befehl von stdin. | M |
 | CLI-03 | `mdu lint` meldet Bild- und Linkziele auf dem konfigurierten Asset-Server, die unbekannt sind oder im Papierkorb liegen, als neue Regel (voraussichtlich `MDU029`). Die Prüfung nutzt den gebündelten Prüf-Endpunkt (API-06), läuft nur, wenn `assets.server` konfiguriert ist, und meldet Netzwerkfehler als Warnung, nicht als Fehler. Mit `--offline` wird sie übersprungen. | M |
 | CLI-04 | Die CLI-Ausgabe bleibt Klartext und abhängigkeitsarm; der HTTP-Zugriff nutzt `HttpClient` ohne zusätzliche Pakete. | M |
 
@@ -279,8 +279,7 @@ User(id, name, display_name, password_hash, is_admin, is_locked, must_change_pas
 ApiToken(id, user_id, name, prefix, hash, project_id?, scope, expires_at?, last_used_at?, created_at)
 Project(id, slug, name, description, quota_bytes?, max_file_bytes?, convert_formats, created_at)
 Membership(project_id, user_id, role)
-Folder(id, project_id, parent_id?, name)
-Asset(id /*public base62*/, project_id, folder_id?, file_name, alt_text, description,
+Asset(id /*public base62*/, project_id, file_name, alt_text, description,
       pair_asset_id?, pair_role?, current_version, deleted_at?, created_by, created_at)
 AssetVersion(asset_id, number, blob_sha256, content_type, size, width, height, created_by, created_at)
 Tag(asset_id, name)
@@ -292,7 +291,7 @@ AuditEntry(id, at, user_id?, project_id?, action, target, details_json, ip)
 ## 9. Akzeptanzkriterien der Kernabläufe
 
 1. **Screenshot einfügen:** Angemeldet in einem Projekt einen Screenshot mit ++cmd+v++ einfügen → innerhalb von 2 s steht ein Markdown-Snippet mit Link der Form `/i/<id>/screenshot-….png` bereit und lässt sich mit einem Klick oder ++c++ kopieren. Der Link zeigt das Bild in einer neuen, nicht angemeldeten Browsersitzung.
-2. **Neu ordnen:** Das Asset in einen anderen Ordner verschieben und den Ordner umbenennen → der kopierte Link liefert weiterhin dasselbe Bild.
+2. **Neu ordnen:** Dem Asset andere Tags geben und einen Tag umbenennen → der kopierte Link liefert weiterhin dasselbe Bild.
 3. **Ersetzen:** Eine neue Datei auf die Detailansicht ziehen → der Link zeigt nach Ablauf der Cache-Zeit das neue Bild, Version 1 bleibt unter `/v1/` abrufbar und lässt sich wiederherstellen.
 4. **Zusammenarbeit:** Ein Owner fügt einen zweiten Benutzer als Editor hinzu → dieser sieht das Projekt, kann hochladen, aber keine Mitglieder verwalten; ein Viewer sieht keine Upload-Fläche und erhält bei API-Uploads `403`.
 5. **Admin:** Ein Admin sieht alle Projekte, auch ohne Mitgliedschaft, und kann Benutzer anlegen und sperren; ein gesperrter Benutzer und seine Tokens werden sofort abgewiesen.
