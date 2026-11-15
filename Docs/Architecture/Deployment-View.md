@@ -59,7 +59,7 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 | `MDU_ASSETS_DATADIRECTORY` | `data` (image: `/data`) | Folder for the database and files |
 | `MDU_ASSETS_TRUSTEDPROXIES` | loopback only | Comma-separated addresses or networks of reverse proxies whose `X-Forwarded-For` and `X-Forwarded-Proto` are trusted, for example `172.16.0.0/12` for a proxy in another container |
 | `MDU_ASSETS_ALLOWHTTP` | `false` | Accept passwords over plain HTTP; only for development and tests |
-| `MDU_ASSETS_MAXUPLOADBYTES` | `20971520` (20 MB) | Largest upload |
+| `MDU_ASSETS_MAXUPLOADBYTES` | `52428800` (50 MB) | Largest upload; only the converted file is stored |
 | `MDU_ASSETS_MAXPIXELS` | `50000000` | Largest image in pixels, checked before decoding |
 | `MDU_ASSETS_PUBLICMAXAGESECONDS`, `MDU_ASSETS_PUBLICSTALEWHILEREVALIDATESECONDS` | `300`, `86400` | Caching of public links |
 | `MDU_ASSETS_SIGNINFAILURES` | `10` | Failed sign-ins per user or address within 15 minutes before further tries get 429 |

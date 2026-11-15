@@ -30,8 +30,11 @@ public sealed record AssetFile(
     DateTimeOffset? LastRequestAt = null,
     VersionOriginal? Original = null);
 
-/// <summary>The upload a version was converted from (UP-11); kept, never served publicly.</summary>
-public sealed record VersionOriginal(string BlobSha256, string ContentType, long Size);
+/// <summary>
+/// The upload a version was converted from (UP-11): its type and size. <c>BlobSha256</c> is set only for versions from the
+/// time the upload itself was kept; such files are never served publicly.
+/// </summary>
+public sealed record VersionOriginal(string? BlobSha256, string ContentType, long Size);
 
 /// <summary>What public delivery needs to serve an asset, read without joins on the hot path.</summary>
 public sealed record DeliveryFile(string BlobSha256, string ContentType, DateTimeOffset CreatedAt, int? Width, bool Animated);
@@ -818,7 +821,8 @@ public sealed class AssetStore(Database database)
             ReadOriginal(reader, 23));
 
     private static VersionOriginal? ReadOriginal(SqliteDataReader reader, int first) =>
-        reader.IsDBNull(first) ? null : new VersionOriginal(reader.GetString(first), reader.GetString(first + 1), reader.GetInt64(first + 2));
+        reader.IsDBNull(first + 1) ? null
+            : new VersionOriginal(reader.IsDBNull(first) ? null : reader.GetString(first), reader.GetString(first + 1), reader.GetInt64(first + 2));
 
     private static void AddOriginal(SqliteCommand command, VersionOriginal? original)
     {

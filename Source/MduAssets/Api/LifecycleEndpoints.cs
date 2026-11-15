@@ -70,7 +70,7 @@ public static class LifecycleEndpoints
         var (image, receiveProblem) = await UploadReceiver.ReceiveAsync(context, settings, jobs, blobs, project.ConvertFormats, cancellationToken, project.MaxFileBytes);
         if (receiveProblem is not null)
             return receiveProblem;
-        if (Quotas.Check(project, projects, image!.Size, image.Blobs, cleanup) is { } quotaProblem)
+        if (Quotas.Check(project, projects, image!.Blob.Size, [image.Blob.Hash], cleanup) is { } quotaProblem)
             return quotaProblem;
 
         var removed = assets.AddVersion(asset.Id, new NewVersion(image.Blob.Hash, image.Info.ContentType, image.Blob.Size,

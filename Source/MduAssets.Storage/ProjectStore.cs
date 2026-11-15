@@ -97,7 +97,7 @@ public sealed class ProjectStore(Database database)
                    m.role, p.convert_formats,
                    (SELECT count(*) FROM assets a WHERE a.project_id = p.id AND a.deleted_at IS NOT NULL AND a.purged_at IS NULL),
                    p.max_versions,
-                   (SELECT coalesce(sum(v.size + coalesce(v.original_size, 0)), 0) FROM assets a JOIN asset_versions v ON v.asset_id = a.id
+                   (SELECT coalesce(sum(v.size + iif(v.original_sha256 IS NULL, 0, v.original_size)), 0) FROM assets a JOIN asset_versions v ON v.asset_id = a.id
                     WHERE a.project_id = p.id AND a.purged_at IS NULL),
                    p.quota_bytes, p.max_file_bytes
             FROM projects p
@@ -122,14 +122,14 @@ public sealed class ProjectStore(Database database)
 
     /// <summary>
     /// Bytes a project uses against its quota (OPS-02): every version of every asset, also old versions and the trash. Variants
-    /// do not count; kept originals do (UP-11). A blob shared by two versions counts twice, because each could be deleted alone.
+    /// do not count; uploads kept before UP-11 stopped keeping them do. A blob shared by two versions counts twice, because each could be deleted alone.
     /// </summary>
     public long UsedBytes(long projectId)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT coalesce(sum(v.size + coalesce(v.original_size, 0)), 0) FROM assets a JOIN asset_versions v ON v.asset_id = a.id
+            SELECT coalesce(sum(v.size + iif(v.original_sha256 IS NULL, 0, v.original_size)), 0) FROM assets a JOIN asset_versions v ON v.asset_id = a.id
             WHERE a.project_id = $project AND a.purged_at IS NULL;
             """;
         command.Parameters.AddWithValue("$project", projectId);

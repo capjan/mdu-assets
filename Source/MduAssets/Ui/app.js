@@ -2,7 +2,7 @@
 // This module runs the project page and picks the page to show; the other pages live in pages.js.
 import {
     $, api, announce, copyText, element, flashCopied, folderOptions, recentUse, folderPath, folderSubtree, folderTree, formatSize, numberFormat,
-    dateFormat, openDialog, plural, readSetting, request, send, writeSetting,
+    bindLosslessToggle, dateFormat, losslessQuery, openDialog, plural, readSetting, request, send, writeSetting,
 } from "./common.js";
 import { replaceWithFile, showDetails } from "./details.js";
 import { buildSnippet, findPairs, formats as snippetFormats, optionControls, readOptions, writeOptions } from "./snippets.js";
@@ -530,6 +530,7 @@ function renderProjects() {
     const editable = canEdit();
     $("upload-button").hidden = !editable;
     $("toolbar-hint").hidden = !editable;
+    $("upload-lossless").closest("label").hidden = !editable;
     $("viewer-notice").hidden = !project || editable;
     // The quota warning from 90 % on (OPS-02).
     const share = project?.quotaBytes ? project.usedBytes / project.quotaBytes : 0;
@@ -908,7 +909,8 @@ function upload(file, name, alt, { keepDuplicate = false, card = createCard(name
         // Uploads land in the folder that is open.
         const folder = folderId() ? `&folder=${folderId()}` : "";
         const duplicates = keepDuplicate ? "" : "&duplicates=reject";
-        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${folder}${duplicates}`);
+        const lossless = losslessQuery() ? `&${losslessQuery()}` : "";
+        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${folder}${duplicates}${lossless}`);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.setRequestHeader("Accept", "application/json");
         xhr.responseType = "json";
@@ -1021,6 +1023,7 @@ async function refreshProjectCounts() {
 }
 
 $("upload-button").addEventListener("click", () => $("file-input").click());
+bindLosslessToggle($("upload-lossless"));
 $("file-input").addEventListener("change", (event) => {
     uploadFiles(event.target.files);
     event.target.value = "";

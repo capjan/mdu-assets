@@ -111,10 +111,10 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 | UP-05 | Nach dem Upload erscheint das Asset sofort mit dem Markdown-Snippet und einer hervorgehobenen Kopieren-Schaltfläche. Wo der Browser es erlaubt, wird das Snippet direkt in die Zwischenablage kopiert; ein Hinweis bestätigt das. Bei mehreren Dateien gibt es „Alle Snippets kopieren“. | M |
 | UP-06 | Erlaubt sind nur png, jpg/jpeg, gif, webp, avif, bmp und svg. Der Typ wird am Dateiinhalt (Signatur) geprüft, nicht nur an der Endung. | M |
 | UP-07 | SVG-Dateien werden beim Upload bereinigt (keine Scripts, Event-Handler, externen Referenzen, `foreignObject`); die Bereinigung folgt der Allowlist des SVG-Lesers von MDU, ist aber ein eigener Sanitizer für vollständige Dateien ([ADR-0012](Architecture/Architecture-Decisions/0012-Own-SVG-Sanitizer.md)). | M |
-| UP-08 | Bei Pixelbildern werden EXIF-, GPS- und sonstige Metadaten entfernt; die Farbprofil-Information bleibt erhalten, die Ausrichtung wird vorher angewendet. Auch das aufbewahrte Original (UP-11) ist bereinigt. | M |
+| UP-08 | Bei Pixelbildern werden EXIF-, GPS- und sonstige Metadaten entfernt; die Farbprofil-Information bleibt erhalten, die Ausrichtung wird vorher angewendet. | M |
 | UP-09 | Lädt jemand eine Datei hoch, deren Inhalt im Projekt schon existiert (SHA-256), weist die UI darauf hin und bietet den vorhandenen Link an. | S |
 | UP-10 | Uploads über Größenlimit oder Quote werden mit verständlicher Meldung abgelehnt, bevor die Datei vollständig übertragen ist (wenn `Content-Length` bekannt). | M |
-| UP-11 | Direkt nach dem Upload wählt der Server das Format mit dem besten Verhältnis von Größe und Qualität und liefert nur noch dieses aus: Fotos (JPEG) werden verlustbehaftetes WebP in hoher Qualität, Grafiken (PNG, BMP, unbewegtes GIF) verlustfreies WebP, jeweils nur, wenn die Datei kleiner wird. SVG, AVIF, WebP und Animationen bleiben, wie sie sind. Dateiname und Endung folgen dem gespeicherten Format. Die hochgeladene Datei wird aufbewahrt, aber nicht öffentlich ausgeliefert; sie zählt zur Quote und ist in Exporten und Backups enthalten. Pro Projekt abschaltbar; bestehende Bilder bleiben unverändert ([ADR-0019](Architecture/Architecture-Decisions/0019-Format-Chosen-on-Upload.md)). | M |
+| UP-11 | Direkt nach dem Upload wählt der Server das Format mit dem besten Verhältnis von Größe und Qualität und liefert nur noch dieses aus: Fotos (JPEG) werden verlustbehaftetes WebP in hoher Qualität; PNG, BMP und unbewegtes GIF werden verlustfreies WebP, außer der Inhalt ist fotografisch (verlustfrei mehr als doppelt so groß wie verlustbehaftet), dann verlustbehaftet. Jeweils nur, wenn die Datei kleiner wird. Beim Upload und beim Ersetzen kann man „Lossless“ wählen (`?lossless=true`): dann geht keine Qualität verloren, JPEG bleibt unverändert. SVG, AVIF, WebP und Animationen bleiben, wie sie sind. Dateiname und Endung folgen dem gespeicherten Format. Gespeichert wird nur die umgewandelte Datei; Typ und Größe des Uploads werden angezeigt. Pro Projekt abschaltbar; bestehende Bilder bleiben unverändert ([ADR-0019](Architecture/Architecture-Decisions/0019-Format-Chosen-on-Upload.md)). | M |
 
 ### 5.4 Links und Snippets
 
@@ -226,7 +226,7 @@ Diese Anforderungen betreffen das Repository `capjan/mdu`.
 
 | ID | Anforderung | Prio |
 | --- | --- | :-: |
-| OPS-01 | Max. Dateigröße pro Upload: global (Standard 20 MB) und pro Projekt niedriger einstellbar. Max. Pixelzahl (Standard 50 MP) gegen Dekompressionsbomben. | M |
+| OPS-01 | Max. Dateigröße pro Upload: global (Standard 50 MB) und pro Projekt niedriger einstellbar. Max. Pixelzahl (Standard 50 MP) gegen Dekompressionsbomben. | M |
 | OPS-02 | Speicherquote pro Projekt (aktuelle Versionen + alte Versionen + Papierkorb), vom Admin festgelegt; die UI zeigt Belegung und warnt ab 90 %. Zwischengespeicherte Größen-/Formatfassungen zählen nicht. | M |
 | OPS-03 | Audit-Log für Anmeldungen (erfolgreich/fehlgeschlagen), Uploads, neue Versionen, Verschieben, Umbenennen, Metadatenänderungen, Löschen, Wiederherstellen, Mitglieder-, Token- und Benutzeränderungen. Admins sehen alles, Owner das Log ihres Projekts. Aufbewahrung konfigurierbar (Standard 365 Tage). | M |
 | OPS-04 | Admin-Übersicht: Benutzer, Projekte mit Belegung, Gesamtspeicher, Papierkorb, Einstellungen. | M |

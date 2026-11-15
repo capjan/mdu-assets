@@ -19,10 +19,13 @@ public sealed record ExportAsset(
     string Id, long? FolderId, string FileName, string AltText, string Description, IReadOnlyList<string> Tags,
     string? PairId, string? PairRole, string UploadedBy, DateTimeOffset CreatedAt, int CurrentVersion, IReadOnlyList<ExportVersion> Versions);
 
-/// <summary>One version in an export; <c>OriginalSha256</c> names the kept upload of a converted version (UP-11), also under <c>files/</c>.</summary>
+/// <summary>
+/// One version in an export. <c>OriginalContentType</c> and <c>OriginalSize</c> describe the upload of a converted version (UP-11);
+/// <c>OriginalSha256</c> names that upload under <c>files/</c> for versions from the time uploads were kept.
+/// </summary>
 public sealed record ExportVersion(
     int Number, string Sha256, string ContentType, long Size, int? Width, int? Height, bool Animated, string CreatedBy, DateTimeOffset CreatedAt,
-    string? OriginalSha256 = null);
+    string? OriginalSha256 = null, string? OriginalContentType = null, long? OriginalSize = null);
 
 /// <summary>An asset that got a new id on import, because its id was already used on this instance (ADR-0018).</summary>
 public sealed record IdChange(string OldId, string NewId);
@@ -59,11 +62,11 @@ public static class TransferEndpoints
         {
             var kept = assets.Versions(asset.Id).Where(v => all || v.Number == asset.Version).OrderBy(v => v.Number).ToList();
             files.UnionWith(kept.Select(v => v.BlobSha256));
-            files.UnionWith(kept.Where(v => v.Original is not null).Select(v => v.Original!.BlobSha256));
+            files.UnionWith(kept.Where(v => v.Original?.BlobSha256 is not null).Select(v => v.Original!.BlobSha256!));
             exported.Add(new ExportAsset(asset.Id, asset.FolderId, asset.FileName, asset.AltText, asset.Description, asset.Tags,
                 asset.PairId, asset.PairRole, asset.UploadedBy, asset.CreatedAt, asset.Version,
                 kept.Select(v => new ExportVersion(v.Number, v.BlobSha256, v.ContentType, v.Size, v.Width, v.Height, v.Animated, v.CreatedBy, v.CreatedAt,
-                    v.Original?.BlobSha256)).ToList()));
+                    v.Original?.BlobSha256, v.Original?.ContentType, v.Original?.Size)).ToList()));
         }
 
         var manifest = new ExportManifest(Format, DateTimeOffset.UtcNow, all,
@@ -207,6 +210,8 @@ public static class TransferEndpoints
                     var kept = stored[originalHash];
                     original = new VersionOriginal(kept.Hash, kept.Info.ContentType, kept.Size);
                 }
+                else if (v is { OriginalContentType: { } originalType, OriginalSize: { } originalSize })
+                    original = new VersionOriginal(null, originalType, originalSize);
                 return new ImportedVersion(v.Number, file.Hash, file.Info.ContentType, file.Size, file.Info.Width, file.Info.Height, v.Animated, v.CreatedAt, original);
             }).ToList();
             var current = versions.Any(v => v.Number == asset.CurrentVersion) ? asset.CurrentVersion : versions.Max(v => v.Number);

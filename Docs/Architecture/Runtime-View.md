@@ -21,16 +21,16 @@ sequenceDiagram
     API->>API: Check role, size limit, quota
     API->>Img: Detect type, strip metadata, read size
     Img-->>API: Cleaned bytes, 1600x900
-    API->>Img: Encode as WebP
-    Img-->>API: Smaller lossless WebP
-    API->>Store: Write WebP and original blobs, asset, version 1, audit entry
+    API->>Img: Encode as lossless and lossy WebP
+    Img-->>API: Lossless WebP, at most twice the lossy size
+    API->>Store: Write WebP blob, asset, version 1, audit entry
     API->>Img: Create thumbnail
     API-->>-UI: 201 id, url, markdown
     UI->>UI: Copy Markdown to the clipboard
     UI-->>Author: Snippet shown and copied
 ```
 
-The upload answers as soon as the image in its chosen format, the kept original and the thumbnail are stored; the snippet already carries the `.webp` name ([ADR-0019](Architecture-Decisions/0019-Format-Chosen-on-Upload.md)).
+The upload answers as soon as the image in its chosen format and the thumbnail are stored; the snippet already carries the `.webp` name ([ADR-0019](Architecture-Decisions/0019-Format-Chosen-on-Upload.md)).
 
 > [!NOTE]
 > Since M9 the sequence runs as shown.

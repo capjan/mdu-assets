@@ -78,8 +78,6 @@ public sealed class ImageProcessingTest : IDisposable
         Assert.Equal(on, (await response.Content.ReadFromJsonAsync<ProjectResponse>(Json, Cancel))!.ConvertFormats);
     }
 
-    private byte[] Blob(string sha256) => File.ReadAllBytes(_server.Services.GetRequiredService<BlobStore>().PathOf(sha256));
-
     private static bool SamePixels(byte[] first, byte[] second)
     {
         using var a = NetVips.Image.NewFromBuffer(first);
@@ -88,10 +86,34 @@ public sealed class ImageProcessingTest : IDisposable
         return (a.Width, a.Height, a.Bands) == (b.Width, b.Height, b.Bands) && difference.Max() == 0;
     }
 
-    [Fact]
-    public async Task StoresGraphicsAsLosslessWebPAndKeepsTheOriginal()
+    /// <summary>A screenshot-like PNG: flat areas and hard edges, where lossless WebP is small.</summary>
+    private static byte[] GraphicPng(int width, int height)
     {
-        var png = SampleImages.Png(800, 400);
+        using var stripes = (NetVips.Image.Xyz(width, height)[0] / 40 % 2 * 200 + 30).Cast(NetVips.Enums.BandFormat.Uchar);
+        using var rgb = stripes.Bandjoin(stripes, stripes).Copy(interpretation: NetVips.Enums.Interpretation.Srgb);
+        return rgb.PngsaveBuffer(keep: NetVips.Enums.ForeignKeep.None);
+    }
+
+    /// <summary>A photo-like PNG, such as a screenshot of a picture: soft noise, where lossless WebP is many times larger.</summary>
+    private static byte[] PhotoPng(int width, int height)
+    {
+        using var noise = NetVips.Image.Gaussnoise(width, height, mean: 128, sigma: 50);
+        using var soft = noise.Bandjoin(noise.Rot180(), noise.FlipHor()).Gaussblur(1.5).Cast(NetVips.Enums.BandFormat.Uchar)
+            .Copy(interpretation: NetVips.Enums.Interpretation.Srgb);
+        return soft.PngsaveBuffer(keep: NetVips.Enums.ForeignKeep.None);
+    }
+
+    private async Task<AssetResponse> UploadLossless(byte[] data, string name, string type)
+    {
+        var response = await Post(data, type, $"?name={name}&lossless=true");
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await response.Content.ReadFromJsonAsync<AssetResponse>(Json, Cancel))!;
+    }
+
+    [Fact]
+    public async Task StoresGraphicsAsLosslessWebP()
+    {
+        var png = GraphicPng(800, 400);
         var asset = await Upload(png, "diagram.png");
 
         var response = await Fetch(asset.Url, "image/png,*/*;q=0.1");
@@ -107,6 +129,29 @@ public sealed class ImageProcessingTest : IDisposable
         var version = (await _admin.GetFromJsonAsync<VersionList>($"/api/v1/assets/{asset.Id}/versions", Json, Cancel))!.Items.Single();
         Assert.Equal(("image/png", (long)png.Length), (version.OriginalContentType, version.OriginalSize));
         Assert.Equal(HttpStatusCode.OK, (await Fetch(asset.Url.Replace(".webp", ".png", StringComparison.Ordinal))).StatusCode);
+    }
+
+    [Fact]
+    public async Task StoresScreenshotsOfPhotosAsLossyWebP()
+    {
+        var png = PhotoPng(800, 400);
+        var asset = await Upload(png, "landscape.png");
+        var lossless = await UploadLossless(png, "landscape-exact.png", "image/png");
+
+        Assert.Equal(("landscape.webp", "image/webp"), (asset.FileName, asset.ContentType));
+        Assert.True(asset.Size * Imaging.ImageProcessor.LosslessAllowance < lossless.Size, $"lossy {asset.Size}, lossless {lossless.Size}");
+        Assert.False(SamePixels(png, await (await Fetch(asset.Url)).Content.ReadAsByteArrayAsync(Cancel)));
+        Assert.True(SamePixels(png, await (await Fetch(lossless.Url)).Content.ReadAsByteArrayAsync(Cancel)));
+    }
+
+    [Fact]
+    public async Task KeepsJpegUnchangedWhenLosslessIsAsked()
+    {
+        var jpeg = SampleImages.Jpeg(400, 300);
+        var asset = await UploadLossless(jpeg, "photo.jpg", "image/jpeg");
+
+        Assert.Equal(("photo.jpg", "image/jpeg", null), (asset.FileName, asset.ContentType, asset.OriginalContentType));
+        Assert.Equal(jpeg, await (await Fetch(asset.Url)).Content.ReadAsByteArrayAsync(Cancel));
     }
 
     [Fact]
@@ -164,37 +209,21 @@ public sealed class ImageProcessingTest : IDisposable
     }
 
     [Fact]
-    public async Task RemovesTheOriginalWithItsVersion()
+    public async Task StoresOnlyTheConvertedFile()
     {
-        var asset = await Upload(SampleImages.Png(300, 300), "gone.png");
-        var original = (await _admin.GetFromJsonAsync<VersionList>($"/api/v1/assets/{asset.Id}/versions", Json, Cancel))!.Items.Single();
-        var store = _server.Services.GetRequiredService<AssetStore>();
-        var originalHash = store.Versions(asset.Id).Single().Original!.BlobSha256;
-        var blobs = _server.Services.GetRequiredService<BlobStore>();
-        Assert.True(File.Exists(blobs.PathOf(originalHash)));
-
-        await _admin.DeleteAsync($"/api/v1/assets/{asset.Id}", Cancel);
-        await _admin.DeleteAsync($"/api/v1/projects/default/trash/{asset.Id}", Cancel);
-
-        Assert.NotNull(original.OriginalSize);
-        Assert.False(File.Exists(blobs.PathOf(originalHash)));
-        Assert.False(File.Exists(blobs.PathOf(asset.Sha256)));
-    }
-
-    [Fact]
-    public async Task CountsTheOriginalAgainstTheQuota()
-    {
-        var asset = await Upload(SampleImages.Png(300, 200), "big.png");
-
+        var asset = await Upload(GraphicPng(300, 300), "only.png");
+        var blobs = Directory.EnumerateFiles(Path.Combine(_server.DataDirectory, "blobs"), "*", SearchOption.AllDirectories).ToList();
         var project = (await _admin.GetFromJsonAsync<ProjectList>("/api/v1/projects", Json, Cancel))!.Items.Single(p => p.Slug == "default");
 
-        Assert.Equal(asset.Size + asset.OriginalSize, project.UsedBytes);
+        Assert.Equal(asset.Sha256, Path.GetFileName(Assert.Single(blobs)));
+        Assert.Null(_server.Services.GetRequiredService<AssetStore>().Versions(asset.Id).Single().Original!.BlobSha256);
+        Assert.Equal(asset.Size, project.UsedBytes);
     }
 
     [Fact]
-    public async Task ExportsAndImportsTheOriginal()
+    public async Task ExportsAndImportsWhatTheUploadWas()
     {
-        var png = SampleImages.Png(320, 160);
+        var png = GraphicPng(320, 160);
         var asset = await Upload(png, "moved.png");
 
         var export = await _admin.GetByteArrayAsync("/api/v1/projects/default/export", Cancel);
@@ -202,9 +231,7 @@ public sealed class ImageProcessingTest : IDisposable
         Assert.Equal(HttpStatusCode.Created, imported.StatusCode);
 
         var copy = (await _admin.GetFromJsonAsync<AssetList>("/api/v1/projects/copy/assets", Json, Cancel))!.Items.Single();
-        var version = _server.Services.GetRequiredService<AssetStore>().Versions(copy.Id).Single();
-        Assert.Equal(("moved.webp", asset.Sha256), (copy.FileName, copy.Sha256));
-        Assert.Equal(png, Blob(version.Original!.BlobSha256));
+        Assert.Equal(("moved.webp", asset.Sha256, "image/png", (long)png.Length), (copy.FileName, copy.Sha256, copy.OriginalContentType, copy.OriginalSize));
     }
 
     [Fact]

@@ -14,6 +14,16 @@ export function writeSetting(key, value) {
     try { localStorage.setItem(key, value); } catch { }
 }
 
+// Whether uploads ask for a conversion without loss of quality (UP-11); one choice per browser for uploads and new versions.
+const losslessKey = "mdu-assets-upload-lossless";
+
+export function bindLosslessToggle(input) {
+    input.checked = readSetting(losslessKey, "false") === "true";
+    input.onchange = () => writeSetting(losslessKey, String(input.checked));
+}
+
+export const losslessQuery = () => readSetting(losslessKey, "false") === "true" ? "lossless=true" : "";
+
 export function announce(message) {
     const status = $("status");
     status.textContent = "";

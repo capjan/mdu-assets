@@ -25,7 +25,7 @@ public sealed class ServerOptions
     public string? TrustedProxies { get; set; }
 
     /// <summary>Largest accepted upload in bytes.</summary>
-    public long MaxUploadBytes { get; set; } = 20 * 1024 * 1024;
+    public long MaxUploadBytes { get; set; } = 50 * 1024 * 1024;
 
     /// <summary>Largest accepted image in pixels (width × height), checked before decoding.</summary>
     public long MaxPixels { get; set; } = 50_000_000;

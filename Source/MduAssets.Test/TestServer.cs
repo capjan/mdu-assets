@@ -74,7 +74,18 @@ public sealed class TestServer : IDisposable
     {
         _factory.Dispose();
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        if (Directory.Exists(DataDirectory))
-            Directory.Delete(DataDirectory, recursive: true);
+
+        // A variant job that a request started may still finish writing while the server stops; try again briefly.
+        for (var attempt = 1; Directory.Exists(DataDirectory); attempt++)
+        {
+            try
+            {
+                Directory.Delete(DataDirectory, recursive: true);
+            }
+            catch (IOException) when (attempt < 10)
+            {
+                Thread.Sleep(50);
+            }
+        }
     }
 }
