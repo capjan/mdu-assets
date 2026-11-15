@@ -1,7 +1,7 @@
 // Details of one image (ORG-06): large preview, snippets, description, tags, folder and metadata.
 import {
     $, announce, clearFormError, copyText, dateFormat, element, flashCopied, folderOptions, formatSize, handleSubmit,
-    openDialog, readSetting, request, send, writeSetting,
+    numberFormat, openDialog, plural, readSetting, recentUse, request, send, writeSetting,
 } from "./common.js";
 import { buildSnippet, formats, optionControls, readOptions, writeOptions } from "./snippets.js";
 
@@ -144,6 +144,9 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
 
         renderSnippets();
         renderPair();
+        $("asset-stats").textContent = asset.requests
+            ? `${plural(asset.requests, "request", "requests")}, the last on ${dateFormat.format(new Date(asset.lastRequestAt))}.`
+            : "Not requested yet.";
 
         const path = folders.find((folder) => folder.id === asset.folderId);
         const meta = [
@@ -310,6 +313,16 @@ function setUpLifecycle(project, { canEdit, editable, owner, get, render }) {
     };
     renderVersions();
 
+    // Pages that showed the image (STA-04).
+    request(`/assets/${encodeURIComponent(asset.id)}/referrers`).then((list) => {
+        $("asset-referrers-wrapper").hidden = list.items.length === 0;
+        $("asset-referrers").replaceChildren(...list.items.map((r) => element("tr", {}, [
+            element("td", {}, [element("span", { class: "referrer", text: `${r.origin}${r.path === "/" ? "" : r.path}` })]),
+            element("td", { text: numberFormat.format(r.count) }),
+            element("td", { text: dateFormat.format(new Date(r.lastRequestAt)) }),
+        ])));
+    }).catch(() => { });
+
     // A new version from the file picker, a drop or a paste on this page.
     const replace = async (file) => {
         if (!editable || !file) return;
@@ -347,9 +360,10 @@ function setUpLifecycle(project, { canEdit, editable, owner, get, render }) {
 
     $("asset-trash").addEventListener("click", async () => {
         const current = get();
+        const usage = await recentUse([current]);
         if (!await openDialog({
             title: `Move ${current.fileName} to the trash?`,
-            text: "Its link answers \"410 Gone\" while it is in the trash. You can restore it with the same link from the trash.",
+            text: `${usage ? `${usage} ` : ""}Its link answers "410 Gone" while it is in the trash. You can restore it with the same link from the trash.`,
             confirmLabel: "Move to trash", danger: true,
         })) return;
         try {

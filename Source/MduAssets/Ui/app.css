@@ -1062,6 +1062,11 @@ kbd {
 
 #asset-trashed p { margin: 0; }
 
+/* Statistics (M7) */
+.stat-line { margin: 0; font-variant-numeric: tabular-nums; }
+
+.referrer { overflow-wrap: anywhere; }
+
 /* Drop zone over the whole window while files are dragged. */
 .drop-zone {
     position: fixed;

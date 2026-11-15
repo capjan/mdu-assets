@@ -29,7 +29,9 @@ public sealed record AssetResponse(
     bool Animated,
     AssetPair? Pair,
     string VersionUrl,
-    DateTimeOffset? DeletedAt)
+    DateTimeOffset? DeletedAt,
+    long Requests,
+    DateTimeOffset? LastRequestAt)
 {
     public static AssetResponse From(AssetFile asset, ServerSettings settings)
     {
@@ -48,7 +50,7 @@ public sealed record AssetResponse(
             Snippets.Markdown(asset.AltText, url), Snippets.Html(asset.AltText, url, asset.Width, asset.Height),
             asset.Width, asset.Height, asset.Size, asset.ContentType, asset.BlobSha256, asset.Version, asset.UploadedBy, asset.CreatedAt,
             $"/api/v1/assets/{asset.Id}/thumbnail?v={asset.BlobSha256[..12]}", asset.Animated, pair,
-            settings.PublicLink(asset.Id, asset.FileName, asset.Version), asset.DeletedAt);
+            settings.PublicLink(asset.Id, asset.FileName, asset.Version), asset.DeletedAt, asset.Requests, asset.LastRequestAt);
     }
 }
 
@@ -66,6 +68,12 @@ public sealed record TrashItem(AssetResponse Asset, DateTimeOffset DeletedAt, st
 public sealed record TrashList(IReadOnlyList<TrashItem> Items, int RetentionDays);
 
 public sealed record PurgeResult(int Deleted);
+
+/// <summary>A page that showed the image (STA-04): origin and path, as browsers report them.</summary>
+public sealed record ReferrerResponse(string Origin, string Path, long Count, DateTimeOffset LastRequestAt);
+
+/// <summary>Referring pages of an asset, at most 100, most requests first.</summary>
+public sealed record ReferrerList(IReadOnlyList<ReferrerResponse> Items);
 
 /// <summary>The other half of a light and dark pair; <c>Role</c> is this asset's role, <c>Markdown</c> holds both lines.</summary>
 public sealed record AssetPair(string Id, string Role, string PartnerUrl, string Markdown);
@@ -185,6 +193,7 @@ public sealed record ServerInfo(string UiBaseUrl, string PublicBaseUrl, long Max
 [JsonSerializable(typeof(VersionAdded))]
 [JsonSerializable(typeof(TrashList))]
 [JsonSerializable(typeof(PurgeResult))]
+[JsonSerializable(typeof(ReferrerList))]
 [JsonSerializable(typeof(DuplicateResponse))]
 [JsonSerializable(typeof(AssetMove))]
 [JsonSerializable(typeof(AssetMoveResult))]

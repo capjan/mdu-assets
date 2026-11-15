@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using MduAssets.Images;
+using MduAssets.Statistics;
 using MduAssets.Storage;
 using Microsoft.Net.Http.Headers;
 
@@ -17,7 +18,8 @@ public static partial class PublicLinks
     // Uploaded SVG files are sanitized; this policy is the second line of defense when a browser opens one directly.
     private const string SvgPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
 
-    public static async Task<IResult> Serve(string id, string? name, HttpContext context, AssetStore assets, Variants variants, ServerSettings settings)
+    public static async Task<IResult> Serve(
+        string id, string? name, HttpContext context, AssetStore assets, Variants variants, UsageCounter counter, ServerSettings settings)
     {
         if (!AssetId.IsValid(id))
             return Results.NotFound();
@@ -36,6 +38,13 @@ public static partial class PublicLinks
             return Results.StatusCode(StatusCodes.Status410Gone);
         if (asset is null)
             return Results.NotFound();
+
+        // Counted once the answer is complete, so only 200 and 304 count (STA-02); widths and formats count as the image.
+        context.Response.OnCompleted(() =>
+        {
+            counter.Record(context, id);
+            return Task.CompletedTask;
+        });
 
         int? width = null;
         if (context.Request.Query["w"].ToString() is { Length: > 0 } text)

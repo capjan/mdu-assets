@@ -16,7 +16,7 @@ description: Known risks, open questions and technical debt of the MDU Asset Ser
 | SVG as script carrier | XSS against users of the UI host | Sanitizing, sandboxing CSP, separate public host. |
 | Request counts too low | Browser and CDN caches hide requests | Short `max-age`; the UI explains the limits. |
 | No password prompt in some browsers | Basic Auth depends on the browser's own prompt; some embedded browsers show none and cannot open the web interface | Documented in the [deployment guide](../Deployment.md#sign-in); session sign-in (AUTH-09) removes it. Consider moving it before 1.0 |
-| Referrers mostly origin only | Browsers send only the origin for cross-site image requests | See open question Q-03. |
+| Referrers mostly origin only | Browsers send only the origin for cross-site image requests | Accepted in [ADR-0017](Architecture-Decisions/0017-Referrer-Policy-for-MDU-Pages.md); the interface explains it |
 | AVIF encoding cost | About one second per image, high memory use | Background queue with bounded workers. |
 | SQLite write contention | Slow statistics or uploads under load | Batched statistics writes, WAL mode; sufficient for the planned team size. |
 
@@ -28,7 +28,7 @@ Tracked as issues with the label [`decision`](https://github.com/capjan/mdu-asse
 | --- | --- | --- |
 | Q-01 | May regular users create projects? Answered by [ADR-0014](Architecture-Decisions/0014-Project-Creation-by-Admin-Setting.md): only with an admin setting, off by default | M3 |
 | Q-02 | Is a CDN purge hook needed when an image is replaced? Answered by [ADR-0016](Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md): no, current links revalidate within five minutes | M6 |
-| Q-03 | Should MDU set a referrer policy for asset images? | M7 |
+| Q-03 | Should MDU set a referrer policy for asset images? Answered by [ADR-0017](Architecture-Decisions/0017-Referrer-Policy-for-MDU-Pages.md): no, the browser default protects readers | M7 |
 | Q-04 | How many versions are kept by default? Answered by [ADR-0016](Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md): all, unless owners set a limit per project | M6 |
 | Q-05 | How does an import handle ID collisions? | M9 |
 

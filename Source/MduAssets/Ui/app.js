@@ -1,7 +1,7 @@
 // MDU Asset Server web interface. Plain JavaScript on the JSON API, no build step (ADR-0007).
 // This module runs the project page and picks the page to show; the other pages live in pages.js.
 import {
-    $, api, announce, copyText, element, flashCopied, folderOptions, folderPath, folderSubtree, folderTree, formatSize, numberFormat,
+    $, api, announce, copyText, element, flashCopied, folderOptions, recentUse, folderPath, folderSubtree, folderTree, formatSize, numberFormat,
     dateFormat, openDialog, plural, readSetting, request, send, writeSetting,
 } from "./common.js";
 import { replaceWithFile, showDetails } from "./details.js";
@@ -21,6 +21,7 @@ const state = {
         tag: params.get("tag") ?? "",
         type: params.get("type") ?? "",
         uploader: params.get("uploader") ?? "",
+        unused: params.get("unused") ?? "",
         from: params.get("from") ?? "",
         to: params.get("to") ?? "",
         subfolders: params.get("subfolders") === "true",
@@ -341,9 +342,10 @@ $("clear-selection").addEventListener("click", () => {
 async function trashAssets(ids) {
     const names = ids.map((id) => state.assets.find((a) => a.id === id)?.fileName).filter(Boolean);
     const what = names.length === 1 ? names[0] : plural(names.length, "image", "images");
+    const usage = await recentUse(ids.map((id) => state.assets.find((a) => a.id === id)).filter(Boolean));
     if (!await openDialog({
         title: `Move ${what} to the trash?`,
-        text: "Links answer \"410 Gone\" while the images are in the trash. They can be restored with the same links.",
+        text: `${usage ? `${usage} ` : ""}Links answer "410 Gone" while the images are in the trash. They can be restored with the same links.`,
         confirmLabel: "Move to trash", danger: true,
     })) return;
     let moved = 0;
@@ -399,15 +401,16 @@ function renderFilters() {
     $("filter-tag").value = filters.tag;
     $("filter-type").value = filters.type;
     $("filter-uploader").value = filters.uploader;
+    $("filter-unused").value = filters.unused;
     $("filter-from").value = filters.from;
     $("filter-to").value = filters.to;
     $("filter-subfolders").checked = filters.subfolders;
-    const active = ["tag", "type", "uploader", "from", "to"].filter((key) => filters[key]).length + (filters.subfolders && folderId() ? 1 : 0);
+    const active = ["tag", "type", "uploader", "unused", "from", "to"].filter((key) => filters[key]).length + (filters.subfolders && folderId() ? 1 : 0);
     $("filter-count").textContent = active ? ` (${active})` : "";
     if (active) $("filters").open = true;
 }
 
-const filtered = () => Boolean(state.filters.q || state.filters.tag || state.filters.type || state.filters.uploader || state.filters.from || state.filters.to);
+const filtered = () => Boolean(state.filters.q || state.filters.tag || state.filters.type || state.filters.uploader || state.filters.unused || state.filters.from || state.filters.to);
 
 async function applyFilters() {
     state.filters = {
@@ -415,6 +418,7 @@ async function applyFilters() {
         tag: $("filter-tag").value,
         type: $("filter-type").value,
         uploader: $("filter-uploader").value,
+        unused: $("filter-unused").value,
         from: $("filter-from").value,
         to: $("filter-to").value,
         subfolders: $("filter-subfolders").checked,
@@ -456,10 +460,10 @@ $("search-input").addEventListener("paste", (event) => {
         openLink(text);
     }
 });
-for (const id of ["filter-tag", "filter-type", "filter-uploader", "filter-from", "filter-to", "filter-subfolders"])
+for (const id of ["filter-tag", "filter-type", "filter-uploader", "filter-unused", "filter-from", "filter-to", "filter-subfolders"])
     $(id).addEventListener("change", () => applyFilters());
 $("clear-filters").addEventListener("click", () => {
-    for (const id of ["search-input", "filter-tag", "filter-type", "filter-uploader", "filter-from", "filter-to"]) $(id).value = "";
+    for (const id of ["search-input", "filter-tag", "filter-type", "filter-uploader", "filter-unused", "filter-from", "filter-to"]) $(id).value = "";
     $("filter-subfolders").checked = false;
     applyFilters();
     $("search-input").focus();
@@ -471,7 +475,7 @@ function assetsPath(after) {
     if (after) query.set("after", after);
     if (state.folder) query.set("folder", state.folder);
     if (state.folder && state.folder !== "none" && state.filters.subfolders) query.set("subfolders", "true");
-    for (const key of ["q", "tag", "type", "uploader"]) if (state.filters[key]) query.set(key, state.filters[key]);
+    for (const key of ["q", "tag", "type", "uploader", "unused"]) if (state.filters[key]) query.set(key, state.filters[key]);
     // Dates are days of the viewer's time zone, as the list shows them; the server gets the exact times.
     if (state.filters.from) query.set("fromTime", localMidnight(state.filters.from));
     if (state.filters.to) query.set("beforeTime", localMidnight(state.filters.to, 1));
@@ -548,7 +552,7 @@ function renderProjects() {
 function sortedAssets() {
     const { key, direction } = state.sort;
     const value = (asset) => key === "pixels" ? (asset.width ?? 0) * (asset.height ?? 0)
-        : key === "fileName" ? asset.fileName.toLowerCase() : asset[key];
+        : key === "fileName" ? asset.fileName.toLowerCase() : key === "lastRequestAt" ? asset.lastRequestAt ?? "" : asset[key];
     const sorted = [...state.assets].sort((a, b) => value(a) < value(b) ? -1 : value(a) > value(b) ? 1 : 0);
     return direction === "descending" ? sorted.reverse() : sorted;
 }
@@ -613,7 +617,7 @@ function renderAssets() {
                 element("span", { class: "asset-thumb" }, [element("img", { src: thumbnail(asset), alt: "", loading: "lazy", decoding: "async", draggable: "false" })]),
                 element("span", { class: "asset-meta" }, [
                     element("span", { class: "asset-name", text: asset.fileName, title: asset.fileName }),
-                    element("span", { class: "asset-detail", text: `${formatDimensions(asset)} · ${formatSize(asset.size)}` }),
+                    element("span", { class: "asset-detail", text: `${formatDimensions(asset)} · ${formatSize(asset.size)} · ${plural(asset.requests, "request", "requests")}` }),
                 ]),
             ]), asset);
             return element("li", { class: `asset-item${selected ? " is-selected" : ""}` }, [link, checkbox(asset)]);
@@ -637,6 +641,8 @@ function renderAssets() {
                 element("td", { text: formatDimensions(asset) }),
                 element("td", { text: formatSize(asset.size) }),
                 element("td", { text: dateFormat.format(new Date(asset.createdAt)) }),
+                element("td", { text: numberFormat.format(asset.requests) }),
+                element("td", { text: asset.lastRequestAt ? dateFormat.format(new Date(asset.lastRequestAt)) : "–" }),
             ]);
         }));
     }

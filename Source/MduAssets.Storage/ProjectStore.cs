@@ -193,6 +193,8 @@ public sealed class ProjectStore(Database database)
             delete.CommandText = """
                 INSERT OR IGNORE INTO retired_asset_ids (id) SELECT id FROM assets WHERE project_id = $id;
                 DELETE FROM tags WHERE asset_id IN (SELECT id FROM assets WHERE project_id = $id);
+                DELETE FROM asset_stats WHERE asset_id IN (SELECT id FROM assets WHERE project_id = $id);
+                DELETE FROM asset_referrers WHERE asset_id IN (SELECT id FROM assets WHERE project_id = $id);
                 UPDATE assets SET pair_asset_id = NULL WHERE project_id = $id;
                 DELETE FROM assets WHERE project_id = $id;
                 DELETE FROM folders WHERE project_id = $id;
