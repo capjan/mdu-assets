@@ -36,17 +36,17 @@ docker compose build --pull
 docker compose up -d --remove-orphans
 docker image prune --force >/dev/null
 
-# Asks the new container through Traefik on this host, so routing and TLS are checked too.
-ui=$(sed -n 's/^ *MDU_ASSETS_UIBASEURL: *//p' docker-compose.yml | tr -d "\"'")
-host=${ui#https://}
+# Asks the new container through Traefik on this host, so routing and TLS are checked too. The host name stays out of
+# the output, which ends up in the public Actions log.
+host=$(sed -n 's/^UI_HOST=//p' .env | tr -d "\"'")
 for _ in $(seq 1 30); do
-  if [ "$(curl -fsS --resolve "$host:443:127.0.0.1" "$ui/healthz" 2>/dev/null)" = Healthy ]; then
+  if [ "$(curl -fsS --resolve "$host:443:127.0.0.1" "https://$host/healthz" 2>/dev/null)" = Healthy ]; then
     printf '%s\n' "$sha" > "$dir/deployed"
-    echo "Deployed $sha to $ui"
+    echo "Deployed $sha"
     exit 0
   fi
   sleep 2
 done
-echo "$ui/healthz did not answer Healthy after the deployment." >&2
+echo "/healthz did not answer Healthy after the deployment." >&2
 docker compose logs --tail 50 mdu-assets >&2
 exit 1

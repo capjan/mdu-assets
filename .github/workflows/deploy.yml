@@ -29,7 +29,6 @@ jobs:
     timeout-minutes: 30
     environment:
       name: production
-      url: ${{ vars.DEPLOY_URL }}
     steps:
     - name: Deploy over SSH
       env:
