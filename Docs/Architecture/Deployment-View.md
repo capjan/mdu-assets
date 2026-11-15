@@ -11,6 +11,17 @@ Step-by-step instructions for this setup are in the [deployment guide](../Deploy
 
 The first production instance runs on a VPS with Docker Compose. A reverse proxy (Caddy in the reference setup) terminates TLS for two host names and forwards both to the same container.
 
+The production instance serves `assets.ruhlaender.com` (UI) and `img.ruhlaender.com` (public links) behind the server's existing Traefik, which also serves other sites ([`Deploy/traefik`](https://github.com/capjan/mdu-assets/tree/main/Deploy/traefik)). Every successful build of `main` is deployed by the workflow `deploy.yml`: an SSH key restricted to a forced command makes the server build and start that commit from its own checkout of the public repository ([deployment guide](../Deployment.md#automatic-deployment-from-github)).
+
+```mermaid
+flowchart LR
+  Build["Build workflow on main"] --> Deploy["Deploy workflow<br/>environment production"]
+  Deploy -->|"ssh: deploy &lt;sha&gt;"| Script["deploy.sh<br/>forced command"]
+  Script -->|"git fetch, check sha on main"| Source["Checkout of the public repository"]
+  Script -->|"docker compose build, up"| Container["Container mdu-assets"]
+  Traefik["Traefik<br/>Let's Encrypt"] --> Container
+```
+
 ```plantuml
 @startuml
 left to right direction

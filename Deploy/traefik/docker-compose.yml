@@ -1,0 +1,37 @@
+# MDU Asset Server behind an existing Traefik v3 that serves the external Docker network "web"
+# with the entry point "websecure" and the certificate resolver "mytlschallenge".
+# Secrets (the first administrator) are in .env next to this file, never in the repository.
+services:
+  mdu-assets:
+    build: ./source/Source
+    image: mdu-assets:deployed
+    restart: unless-stopped
+    environment:
+      MDU_ASSETS_UIBASEURL: https://assets.ruhlaender.com
+      MDU_ASSETS_PUBLICBASEURL: https://img.ruhlaender.com
+      # Traefik reaches the container through the network "web"; only it may report HTTPS and client addresses.
+      MDU_ASSETS_TRUSTEDPROXIES: 172.18.0.0/16
+      MDU_ASSETS_ADMIN_USER: ${ADMIN_USER:-}
+      MDU_ASSETS_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    volumes:
+      - data:/data
+    networks: [web]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.services.mdu-assets.loadbalancer.server.port=8080"
+      - "traefik.http.routers.mdu-assets-ui.rule=Host(`assets.ruhlaender.com`)"
+      - "traefik.http.routers.mdu-assets-ui.entrypoints=websecure"
+      - "traefik.http.routers.mdu-assets-ui.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.mdu-assets-ui.service=mdu-assets"
+      - "traefik.http.routers.mdu-assets-public.rule=Host(`img.ruhlaender.com`)"
+      - "traefik.http.routers.mdu-assets-public.entrypoints=websecure"
+      - "traefik.http.routers.mdu-assets-public.tls.certresolver=mytlschallenge"
+      - "traefik.http.routers.mdu-assets-public.service=mdu-assets"
+
+volumes:
+  data:
+
+networks:
+  web:
+    external: true

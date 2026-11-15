@@ -1,0 +1,47 @@
+name: Deploy
+# Deploys every successful build of main to the production server. The repository is public, so:
+# - only builds of pushes to main in this repository deploy, never pull requests or forks;
+# - the secrets live in the environment "production", which only main may use;
+# - the SSH key can only run "deploy <commit sha>" on the server (forced command), and the server
+#   builds the image itself from that commit after checking that it is on main.
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Production
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_URL }}
+    steps:
+    - name: Deploy over SSH
+      env:
+        DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        DEPLOY_TARGET: ${{ secrets.DEPLOY_TARGET }}
+        COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      run: |
+        install -d -m 700 ~/.ssh
+        printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
+        printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+        chmod 600 ~/.ssh/deploy ~/.ssh/known_hosts
+        ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes \
+          "$DEPLOY_TARGET" "deploy $COMMIT"
+        rm -f ~/.ssh/deploy
