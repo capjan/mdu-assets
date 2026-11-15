@@ -38,6 +38,9 @@ public static class ProjectEndpoints
     private static Results<Created<ProjectResponse>, ProblemHttpResult> Create(
         NewProject request, ClaimsPrincipal user, ProjectStore projects, SettingsStore settings)
     {
+        if (user.ReadOnlyToken() || user.TokenProject() is not null)
+            return TypedResults.Problem("This token is limited to reading or to one project and cannot create projects.",
+                statusCode: StatusCodes.Status403Forbidden, title: "Not allowed");
         if (!user.IsAdmin() && !settings.GetFlag(SettingsStore.UsersCanCreateProjects))
             return TypedResults.Problem("Only admins create projects on this instance. Ask an admin to create it or to allow it.",
                 statusCode: StatusCodes.Status403Forbidden, title: "Not allowed");

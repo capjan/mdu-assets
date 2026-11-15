@@ -17,8 +17,10 @@ public sealed class BasicAuthenticationHandler(
     ILoggerFactory logger,
     UrlEncoder encoder,
     UserStore users,
+    TokenStore tokens,
     CredentialCache credentials,
-    ServerSettings settings)
+    ServerSettings settings,
+    TimeProvider time)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
     public const string SchemeName = "Basic";
@@ -27,12 +29,16 @@ public sealed class BasicAuthenticationHandler(
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!AuthenticationHeaderValue.TryParse(Request.Headers.Authorization, out var header) ||
-            !SchemeName.Equals(header.Scheme, StringComparison.OrdinalIgnoreCase))
+        if (!AuthenticationHeaderValue.TryParse(Request.Headers.Authorization, out var header))
+            return Task.FromResult(AuthenticateResult.NoResult());
+        var bearer = "Bearer".Equals(header.Scheme, StringComparison.OrdinalIgnoreCase);
+        if (!bearer && !SchemeName.Equals(header.Scheme, StringComparison.OrdinalIgnoreCase))
             return Task.FromResult(AuthenticateResult.NoResult());
 
         if (!Request.IsHttps && !settings.Options.AllowHttp)
-            return Task.FromResult(AuthenticateResult.Fail("Passwords are only accepted over HTTPS."));
+            return Task.FromResult(AuthenticateResult.Fail("Passwords and tokens are only accepted over HTTPS."));
+        if (bearer)
+            return Task.FromResult(AuthenticateToken(header.Parameter ?? string.Empty));
 
         string name, password;
         try
@@ -65,6 +71,40 @@ public sealed class BasicAuthenticationHandler(
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName));
         return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName)));
+    }
+
+    /// <summary>
+    /// A personal API token (AUTH-07). It acts for its user with at most the user's rights: limited to its project and, for
+    /// read tokens, to reading. Tokens of locked users and expired tokens are rejected on the next request.
+    /// </summary>
+    private AuthenticateResult AuthenticateToken(string secret)
+    {
+        if (!secret.StartsWith(TokenStore.Marker, StringComparison.Ordinal) || tokens.Find(secret) is not { } owner)
+            return AuthenticateResult.Fail("Unknown API token.");
+        var (token, user) = (owner.Token, owner.User);
+        var now = time.GetUtcNow();
+        if (user.IsLocked)
+            return AuthenticateResult.Fail("The user of this token is locked.");
+        if (token.ExpiresAt is { } expires && expires <= now)
+            return AuthenticateResult.Fail("The API token has expired.");
+        tokens.Touch(token.Id, now);
+
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.NameIdentifier, user.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new(ClaimTypes.Name, user.Name),
+            new(Caller.TokenClaim, token.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new(Caller.TokenScopeClaim, token.Scope),
+        };
+        if (token.ProjectId is { } project)
+            claims.Add(new Claim(Caller.TokenProjectClaim, project.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        // An admin's token reaches every project only when it is neither limited to a project nor to reading.
+        if (user.IsAdmin && token.Scope == "write" && token.ProjectId is null)
+            claims.Add(new Claim(ClaimTypes.Role, AdminRole));
+        if (user.MustChangePassword)
+            claims.Add(new Claim(Caller.MustChangePasswordClaim, "true"));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName));
+        return AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName));
     }
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)

@@ -306,6 +306,25 @@ public sealed class AssetStore(Database database)
             reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.GetBoolean(5), reader.GetBoolean(6)));
     }
 
+    /// <summary>
+    /// The status of a link for the public check (API-06): <c>ok</c>, <c>trash</c>, <c>deleted</c> (for good) or <c>unknown</c>,
+    /// also for a version that does not exist. Nothing else about the asset is read.
+    /// </summary>
+    public string LinkStatus(string id, int? version)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT CASE WHEN a.purged_at IS NOT NULL THEN 'deleted' WHEN a.deleted_at IS NOT NULL THEN 'trash'
+                        WHEN v.number IS NULL THEN 'unknown' ELSE 'ok' END
+            FROM assets a LEFT JOIN asset_versions v ON v.asset_id = a.id AND v.number = coalesce($version, a.current_version)
+            WHERE a.id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$version", (object?)version ?? DBNull.Value);
+        return command.ExecuteScalar() as string ?? "unknown";
+    }
+
     /// <summary>All versions of an asset, newest first (VER-03).</summary>
     public IReadOnlyList<AssetVersion> Versions(string id)
     {

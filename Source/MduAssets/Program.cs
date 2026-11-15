@@ -61,6 +61,7 @@ builder.Services.AddSingleton(dataDirectory);
 builder.Services.AddSingleton(database);
 builder.Services.AddSingleton<BlobStore>();
 builder.Services.AddSingleton<UserStore>();
+builder.Services.AddSingleton<TokenStore>();
 builder.Services.AddSingleton<AssetStore>();
 builder.Services.AddSingleton<FolderStore>();
 builder.Services.AddSingleton<VariantStore>();
@@ -90,6 +91,24 @@ builder.Services
     .AddAuthentication(BasicAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>(BasicAuthenticationHandler.SchemeName, null);
 builder.Services.AddAuthorization();
+// The public check endpoint answers anybody, so it is limited per client address (API-06).
+builder.Services.AddRateLimiter(limiter =>
+{
+    limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    limiter.AddPolicy(CheckEndpoint.RateLimitPolicy, context => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }));
+});
+// The API description (API-02); MDU renders it as API reference.
+builder.Services.AddOpenApi("v1", openApi => openApi.AddDocumentTransformer((document, _, _) =>
+{
+    document.Info.Title = "MDU Asset Server API";
+    document.Info.Version = "v1";
+    document.Info.Description =
+        "Upload, organize and find images for MDU documentation. Sign in with HTTP Basic authentication or a personal API token " +
+        "(Authorization: Bearer mdua_…). Errors are application/problem+json (RFC 9457).";
+    return Task.CompletedTask;
+}));
 
 var app = builder.Build();
 
@@ -103,17 +122,24 @@ app.Use((context, next) =>
 app.UseCrossSiteRequestProtection(settings);
 app.UseAuthentication();
 app.UsePasswordChangeGate();
+app.UsePasswordOnlyGate();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapHealthChecks("/healthz");
 
+// Without signing in, on the UI host: the API description and the link check for mdu lint.
+app.MapOpenApi("/api/v1/openapi.json").RequireHost(settings.UiHost).AllowAnonymous();
+app.MapPost("/api/v1/public/check", CheckEndpoint.Handle).RequireHost(settings.UiHost).AllowAnonymous()
+    .RequireRateLimiting(CheckEndpoint.RateLimitPolicy);
+
 // Public links: only on the public host, without authentication.
-app.MapMethods("/i/{id}", ["GET", "HEAD"], PublicLinks.Serve).RequireHost(settings.PublicHost);
-app.MapMethods("/i/{id}/{**name}", ["GET", "HEAD"], PublicLinks.Serve).RequireHost(settings.PublicHost);
+app.MapMethods("/i/{id}", ["GET", "HEAD"], PublicLinks.Serve).RequireHost(settings.PublicHost).ExcludeFromDescription();
+app.MapMethods("/i/{id}/{**name}", ["GET", "HEAD"], PublicLinks.Serve).RequireHost(settings.PublicHost).ExcludeFromDescription();
 
 // API: only on the UI host, signed in. Project rights are checked per request by ProjectAccess; user management needs the admin role.
 var api = app.MapGroup("/api/v1").RequireHost(settings.UiHost).RequireAuthorization();
-var admin = api.MapGroup("").RequireAuthorization(policy => policy.RequireRole(BasicAuthenticationHandler.AdminRole));
+var admin = api.MapGroup("").RequireAuthorization(policy => policy.RequireRole(BasicAuthenticationHandler.AdminRole)).RequirePassword();
 AssetEndpoints.Map(api);
 FolderEndpoints.Map(api);
 LifecycleEndpoints.Map(api);
@@ -122,8 +148,8 @@ UserEndpoints.Map(api, admin);
 
 // Web interface: only on the UI host, signed in, so the browser asks for the password on the first visit.
 var ui = app.MapGroup("").RequireHost(settings.UiHost).RequireAuthorization();
-ui.MapGet("/", (UiFiles files, HttpContext context) => files.Serve("index.html", context));
-ui.MapGet("/ui/{**path}", (string path, UiFiles files, HttpContext context) => files.Serve(path, context));
+ui.MapGet("/", (UiFiles files, HttpContext context) => files.Serve("index.html", context)).ExcludeFromDescription();
+ui.MapGet("/ui/{**path}", (string path, UiFiles files, HttpContext context) => files.Serve(path, context)).ExcludeFromDescription();
 
 if (createdAdmin is not null)
     app.Logger.LogInformation("Created the first administrator {Admin}", createdAdmin);

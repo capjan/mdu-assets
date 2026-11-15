@@ -99,7 +99,7 @@ async function load() {
     switch (state.page) {
         case "account":
             showPage("account");
-            showAccount(me);
+            showAccount(me, { projects: state.projects });
             return;
         case "admin":
             if (me.isAdmin) {
