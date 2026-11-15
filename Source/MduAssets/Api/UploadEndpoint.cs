@@ -1,3 +1,4 @@
+using MduAssets.Images;
 using MduAssets.Imaging;
 using MduAssets.Security;
 using MduAssets.Storage;
@@ -15,13 +16,15 @@ public static class UploadEndpoint
 {
     private const int MultipartOverhead = 64 * 1024;
 
-    public static async Task<Results<Created<AssetResponse>, ProblemHttpResult>> Handle(
+    public static async Task<Results<Created<AssetResponse>, Conflict<DuplicateResponse>, ProblemHttpResult>> Handle(
         string project,
         HttpContext context,
         AssetStore assets,
         BlobStore blobs,
         ProjectAccess access,
         FolderStore folders,
+        ImageJobs jobs,
+        Variants variants,
         ServerSettings settings,
         CancellationToken cancellationToken)
     {
@@ -85,12 +88,39 @@ public static class UploadEndpoint
             return Problem(StatusCodes.Status422UnprocessableEntity, "Image too large",
                 $"The image has {info.Width} × {info.Height} pixels; at most {settings.Options.MaxPixels:N0} pixels are allowed.");
 
+        // Metadata such as EXIF and GPS never reaches the store; the orientation is applied first (UP-08).
+        PreparedImage prepared;
+        try
+        {
+            var detected = (Content: content, Info: info);
+            prepared = await jobs.RunAsync(() => ImageProcessor.Prepare(detected.Content, detected.Info), cancellationToken);
+        }
+        catch (ImageDecodeException exception)
+        {
+            return Problem(StatusCodes.Status422UnprocessableEntity, "Unreadable image", exception.Message);
+        }
+
+        (content, info) = (prepared.Content, prepared.Info);
         var blob = await blobs.PutAsync(new MemoryStream(content, writable: false), cancellationToken);
+
+        // ?duplicates=reject asks to hear about content that is already in the project instead of adding it again (UP-09).
+        if (context.Request.Query["duplicates"] == "reject" && assets.FindByContent(target.Id, blob.Hash) is { } existingId)
+        {
+            var existing = AssetResponse.From(assets.FindCurrent(existingId)!, settings);
+            return TypedResults.Conflict(new DuplicateResponse("Already uploaded",
+                $"This image is already in the project as {existing.FileName}.", existing));
+        }
+
         var fileName = FileNames.Normalize(name, info.Extension);
         var altText = string.IsNullOrWhiteSpace(alt) ? FileNames.SuggestAltText(name) : alt.Trim();
         var userId = context.User.Id();
 
-        var asset = assets.Create(new NewAsset(target.Id, folderId, fileName, altText, blob.Hash, info.ContentType, blob.Size, info.Width, info.Height, userId));
+        var asset = assets.Create(new NewAsset(target.Id, folderId, fileName, altText, blob.Hash, info.ContentType, blob.Size, info.Width, info.Height, userId, prepared.Animated));
+
+        // The preview is ready when the interface shows the upload (DLV-06); the AVIF copy follows in the background.
+        await variants.ThumbnailAsync(blob.Hash, cancellationToken);
+        if (target.ConvertFormats)
+            variants.PrepareAvif(blob.Hash, info.ContentType, prepared.Animated);
         var response = AssetResponse.From(asset, settings);
         return TypedResults.Created(response.Url, response);
     }

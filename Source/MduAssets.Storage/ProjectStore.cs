@@ -29,7 +29,7 @@ public static class ProjectRoles
     };
 }
 
-public sealed record Project(long Id, string Slug, string Name, string Description);
+public sealed record Project(long Id, string Slug, string Name, string Description, bool ConvertFormats = true);
 
 /// <summary>A project with its usage and the role of the user who asked; <c>Role</c> is <c>null</c> when an admin is no member.</summary>
 public sealed record ProjectSummary(
@@ -39,7 +39,8 @@ public sealed record ProjectSummary(
     int AssetCount,
     long TotalSize,
     DateTimeOffset? LastUpload,
-    ProjectRole? Role);
+    ProjectRole? Role,
+    bool ConvertFormats = true);
 
 public sealed record Member(string UserName, ProjectRole Role, bool IsLocked);
 
@@ -53,10 +54,10 @@ public sealed class ProjectStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, slug, name, description FROM projects WHERE slug = $slug;";
+        command.CommandText = "SELECT id, slug, name, description, convert_formats FROM projects WHERE slug = $slug;";
         command.Parameters.AddWithValue("$slug", slug);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)) : null;
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4)) : null;
     }
 
     /// <summary>
@@ -74,7 +75,7 @@ public sealed class ProjectStore(Database database)
                     JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
                     WHERE a.project_id = p.id),
                    (SELECT max(a.created_at) FROM assets a WHERE a.project_id = p.id),
-                   m.role
+                   m.role, p.convert_formats
             FROM projects p
             {(all ? "LEFT JOIN" : "JOIN")} memberships m ON m.project_id = p.id AND m.user_id = $user
             {(projectId is null ? "" : "WHERE p.id = $project")}
@@ -89,7 +90,7 @@ public sealed class ProjectStore(Database database)
             projects.Add(new ProjectSummary(
                 reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetInt64(4),
                 reader.IsDBNull(5) ? null : Clock.Parse(reader.GetString(5)),
-                reader.IsDBNull(6) ? null : ProjectRoles.Parse(reader.GetString(6))));
+                reader.IsDBNull(6) ? null : ProjectRoles.Parse(reader.GetString(6)), reader.GetBoolean(7)));
         return projects;
     }
 
@@ -126,16 +127,17 @@ public sealed class ProjectStore(Database database)
 
     /// <summary>Changes name and description. The slug and all asset links stay the same (PRJ-04).</summary>
     /// <returns>The changed project, or <c>null</c> when it was deleted meanwhile.</returns>
-    public Project? Update(long id, string name, string description)
+    public Project? Update(long id, string name, string description, bool convertFormats)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE projects SET name = $name, description = $description WHERE id = $id RETURNING id, slug, name, description;";
+        command.CommandText = "UPDATE projects SET name = $name, description = $description, convert_formats = $convert WHERE id = $id RETURNING id, slug, name, description, convert_formats;";
+        command.Parameters.AddWithValue("$convert", convertFormats);
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$name", name);
         command.Parameters.AddWithValue("$description", description);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3)) : null;
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4)) : null;
     }
 
     /// <summary>Deletes a project without assets. Returns <c>false</c> when it still has assets.</summary>

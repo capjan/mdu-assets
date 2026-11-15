@@ -18,9 +18,12 @@ export async function showSettings(project, me) {
     const details = $("details-form");
     $("details-name").value = project.name;
     $("details-description").value = project.description;
+    $("details-convert").checked = project.convertFormats;
     handleSubmit(details, async () => {
         clearFormError(details);
-        const updated = await send(projectPath(project), "PATCH", { name: $("details-name").value, description: $("details-description").value });
+        const updated = await send(projectPath(project), "PATCH", {
+            name: $("details-name").value, description: $("details-description").value, convertFormats: $("details-convert").checked,
+        });
         project.name = updated.name;
         project.description = updated.description;
         $("settings-title").textContent = `Settings of ${updated.name}`;

@@ -34,9 +34,9 @@ public sealed class OrganizeTest : IDisposable
         return (await response.Content.ReadFromJsonAsync<FolderResponse>(Json, Cancel))!;
     }
 
-    private async Task<AssetResponse> Upload(string name, long? folderId = null, uint width = 4)
+    private async Task<AssetResponse> Upload(string name, long? folderId = null, int width = 4)
     {
-        var content = new ByteArrayContent(TestImages.Png(width, 3));
+        var content = new ByteArrayContent(SampleImages.Png(width, 3));
         content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         var folder = folderId is null ? "" : $"&folder={folderId}";
         var response = await _admin.PostAsync($"/api/v1/projects/default/assets?name={name}{folder}", content, Cancel);
@@ -112,7 +112,7 @@ public sealed class OrganizeTest : IDisposable
         var a = await Upload("a.png");
         var b = await Upload("b.png");
         await _admin.PostAsJsonAsync("/api/v1/projects", new NewProject("other", "Other", null), Json, Cancel);
-        var content = new ByteArrayContent(TestImages.Png(2, 2));
+        var content = new ByteArrayContent(SampleImages.Png(2, 2));
         content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         var foreign = (await (await _admin.PostAsync("/api/v1/projects/other/assets?name=c.png", content, Cancel))
             .Content.ReadFromJsonAsync<AssetResponse>(Json, Cancel))!;

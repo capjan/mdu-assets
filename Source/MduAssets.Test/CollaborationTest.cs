@@ -37,7 +37,7 @@ public sealed class CollaborationTest : IDisposable
 
     private async Task<HttpResponseMessage> Upload(string user, string project = "default")
     {
-        var content = new ByteArrayContent(TestImages.Png(3, 2));
+        var content = new ByteArrayContent(SampleImages.Png(3, 2));
         content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         return await As(user).PostAsync($"/api/v1/projects/{project}/assets?name=pic.png", content, Cancel);
     }

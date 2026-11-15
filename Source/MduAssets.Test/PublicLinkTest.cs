@@ -34,7 +34,7 @@ public sealed class PublicLinkTest : IDisposable
     [Fact]
     public async Task ServesTheFileWithCachingAndSecurityHeaders()
     {
-        var data = TestImages.Png(8, 8);
+        var data = SampleImages.Png(8, 8);
         var asset = await Upload(data, "diagram.png");
 
         var response = await Get(asset.Url);
@@ -57,7 +57,7 @@ public sealed class PublicLinkTest : IDisposable
     [InlineData("/any/thing/else")]
     public async Task IgnoresTheNameInTheLink(string suffix)
     {
-        var asset = await Upload(TestImages.Png(2, 2), "diagram.png");
+        var asset = await Upload(SampleImages.Png(2, 2), "diagram.png");
 
         var response = await Get($"http://img.test/i/{asset.Id}{suffix}");
 
@@ -67,7 +67,7 @@ public sealed class PublicLinkTest : IDisposable
     [Fact]
     public async Task AnswersConditionalRequestsWithNotModified()
     {
-        var asset = await Upload(TestImages.Png(2, 2), "a.png");
+        var asset = await Upload(SampleImages.Png(2, 2), "a.png");
         var etag = (await Get(asset.Url)).Headers.ETag!;
 
         var response = await Get(asset.Url, request => request.Headers.IfNoneMatch.Add(etag));
@@ -78,7 +78,7 @@ public sealed class PublicLinkTest : IDisposable
     [Fact]
     public async Task SupportsHeadAndRangeRequests()
     {
-        var data = TestImages.Png(3, 3);
+        var data = SampleImages.Png(3, 3);
         var asset = await Upload(data, "a.png");
 
         var head = await Get(asset.Url, method: HttpMethod.Head);
@@ -116,10 +116,10 @@ public sealed class PublicLinkTest : IDisposable
     [Fact]
     public async Task ServesLinksOnlyOnThePublicHostAndTheApiOnlyOnTheUiHost()
     {
-        var asset = await Upload(TestImages.Png(2, 2), "a.png");
+        var asset = await Upload(SampleImages.Png(2, 2), "a.png");
         var onUiHost = await _server.Ui().GetAsync($"/i/{asset.Id}/a.png", TestContext.Current.CancellationToken);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/projects/default/assets") { Content = new ByteArrayContent(TestImages.Png(1, 1)) };
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/projects/default/assets") { Content = new ByteArrayContent(SampleImages.Png(1, 1)) };
         request.Headers.Authorization = _server.Ui().DefaultRequestHeaders.Authorization;
         var apiOnPublicHost = await _server.Public().SendAsync(request, TestContext.Current.CancellationToken);
 

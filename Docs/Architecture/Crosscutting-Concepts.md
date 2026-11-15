@@ -71,12 +71,12 @@ The table sketch is in section 8 of the [requirements](../Requirements.md#8-date
 
 - Current-version links: `Cache-Control: public, max-age=300, stale-while-revalidate=86400`, strong ETag per variant. A replaced image reaches readers within minutes.
 - Version links `/v<n>/`: `Cache-Control: public, max-age=31536000, immutable`.
-- Format negotiation by `Accept` with `Vary: Accept`; only configured widths for `?w=` so the variant cache stays bounded.
+- Format negotiation by `Accept` with `Vary: Accept`: AVIF when its copy is ready, otherwise WebP, otherwise the original; a copy is served only when it is smaller. `?w=` snaps to configured widths, so the variant cache stays bounded. ETags differ per width and format.
 - Conditional requests (`If-None-Match`, `If-Modified-Since`), `HEAD` and `Range` are supported.
 
 ## Image processing
 
-NetVips runs with the libvips operation cache disabled and limited concurrency. A semaphore bounds parallel image jobs so that memory stays predictable. Orientation is applied before metadata is stripped; the ICC profile is kept. AVIF is never encoded on the request path. Details and measurements are in the [NetVips AOT spike](NetVips-AOT-Spike.md).
+NetVips runs with the libvips operation cache disabled and limited threads per operation. `ImageJobs` bounds parallel image jobs (half the processors by default, `MDU_ASSETS_IMAGEJOBS`) so that memory stays predictable. Uploads with EXIF, XMP, IPTC or PNG comments, or with an orientation, are re-encoded once with the orientation applied and the ICC profile kept; all others keep their exact bytes. Previews (480 pixels, WebP), `?w=` widths and WebP copies are made on first use and kept in `variants/`; requests for the same missing variant wait for one job. AVIF is never encoded on the request path: `AvifQueue` makes AVIF copies with one background worker (`MDU_ASSETS_AVIFWORKERS`). The rules are in [ADR-0015](Architecture-Decisions/0015-Image-Variant-Rules.md). Details and measurements are in the [NetVips AOT spike](NetVips-AOT-Spike.md).
 
 ## Errors and validation
 
@@ -102,7 +102,9 @@ Settings come from `appsettings.json` and `MDU_ASSETS_*` environment variables, 
 - Keyboard in the grid (ORG-07): one image is in the tab order; arrow keys, Home and End move between images, Enter opens the details, C copies the Markdown snippet, Space selects.
 - Details (ORG-06): `?project=<slug>&asset=<id>` shows a large preview on a checkerboard, light or dark background, all snippets, description, tags, folder and the metadata (type, size, hash, uploader, date, version). Versions, statistics, referring pages and the light/dark partner join this page when they exist (M5 – M7).
 - Finding an image by its link (LNK-09): pasting a public link into the search, with or without file name, size parameter or fragment, opens its details through `GET /api/v1/lookup`, if the caller may see the project.
-- Image list: the API returns pages of at most 500 assets, newest first (`?limit=` and `?after=<id>`, with `next` in the answer); the interface loads 200 at a time with a "Show more images" button. The project summary counts all images. Until thumbnails arrive in M5, previews load the original through its public link, lazily.
+- Snippets (LNK-05 – LNK-08): built in the browser from the asset. A light and dark pair gives two lines with `#only-light` and `#only-dark` and the same alt text; the switches for `{.image-frame}`, zoom and width are remembered per user in the browser, and a caption on the details page wraps the image in an MDU figure (`^^^`). Uploads named `*-light` and `*-dark` are offered as a pair.
+- Duplicates (UP-09): the interface uploads with `?duplicates=reject`; content that is already in the project comes back as 409 with the existing image, and the card offers it or a second copy. API clients without the parameter always get a new asset.
+- Image list: the API returns pages of at most 500 assets, newest first (`?limit=` and `?after=<id>`, with `next` in the answer); the interface loads 200 at a time with a "Show more images" button. The project summary counts all images. Previews come from `GET /api/v1/assets/{id}/thumbnail?v=<hash>`: signed in, never counted, cached for good because the hash changes with the content.
 - Pages: `?project=<slug>` shows the images of a project, `&page=settings` its settings (owners); `?page=new-project`, `?page=account` and `?page=admin` are the other pages. Controls appear only for callers who may use them: viewers see no upload controls and read-only fields, and with a start password the account page is the only page. The server checks every request again.
 - After a password change the browser still sends the old Basic Auth password and shows its sign-in prompt on the next request; the account page says so.
 - Keyboard focus only on `:focus-visible` with the MDU outline (inset where a container clips); a live region announces uploads, saves and copies; reduced motion turns transitions off.

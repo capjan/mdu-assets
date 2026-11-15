@@ -17,7 +17,7 @@ public sealed class AuthenticationTest : IDisposable
 
     private static ByteArrayContent Png()
     {
-        var content = new ByteArrayContent(TestImages.Png(4, 3));
+        var content = new ByteArrayContent(SampleImages.Png(4, 3));
         content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         return content;
     }
@@ -91,7 +91,7 @@ public sealed class AuthenticationTest : IDisposable
             request.Request.Headers.Authorization = "Basic " + credentials;
             request.Request.Headers["X-Forwarded-Proto"] = "https";
             request.Request.Headers["X-Forwarded-For"] = "192.0.2.10";
-            request.Request.Body = new MemoryStream(TestImages.Png(2, 2));
+            request.Request.Body = new MemoryStream(SampleImages.Png(2, 2));
         });
 
         Assert.Equal(expected, context.Response.StatusCode);

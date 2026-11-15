@@ -10,8 +10,10 @@ public sealed class StartupException(string message) : Exception(message);
 /// <summary>The validated settings the server runs with.</summary>
 public sealed class ServerSettings
 {
-    private ServerSettings(ServerOptions options, Uri uiBaseUrl, Uri publicBaseUrl, IReadOnlyList<IPNetwork> trustedProxies)
+    private ServerSettings(ServerOptions options, Uri uiBaseUrl, Uri publicBaseUrl, IReadOnlyList<IPNetwork> trustedProxies, IReadOnlyList<int> widths)
     {
+        Widths = widths;
+        ImageJobs = options.ImageJobs > 0 ? options.ImageJobs : Math.Max(1, Environment.ProcessorCount / 2);
         Options = options;
         UiBaseUrl = uiBaseUrl;
         PublicBaseUrl = publicBaseUrl;
@@ -25,6 +27,15 @@ public sealed class ServerSettings
     public Uri PublicBaseUrl { get; }
 
     public IReadOnlyList<IPNetwork> TrustedProxies { get; }
+
+    /// <summary>The widths <c>?w=</c> may ask for, ascending.</summary>
+    public IReadOnlyList<int> Widths { get; }
+
+    /// <summary>How many image jobs run at the same time.</summary>
+    public int ImageJobs { get; }
+
+    /// <summary>The configured width for a requested one: the smallest that is not smaller, or <c>null</c> when all are smaller.</summary>
+    public int? SnapWidth(int requested) => Widths.Cast<int?>().FirstOrDefault(w => w >= requested);
 
     /// <summary>The host pattern that routes requests to the UI and API endpoints.</summary>
     public string UiHost => HostPattern(UiBaseUrl);
@@ -54,8 +65,25 @@ public sealed class ServerSettings
             throw new StartupException("MDU_ASSETS_MAXUPLOADBYTES must be greater than 0.");
         if (options.MaxPixels <= 0)
             throw new StartupException("MDU_ASSETS_MAXPIXELS must be greater than 0.");
+        if (options.ThumbnailSize is < 64 or > 2048)
+            throw new StartupException("MDU_ASSETS_THUMBNAILSIZE must be between 64 and 2048.");
+        if (options.AvifWorkers < 0)
+            throw new StartupException("MDU_ASSETS_AVIFWORKERS must be 0 (no AVIF) or more.");
 
-        return new ServerSettings(options, ui, publicLinks, ParseProxies(options.TrustedProxies));
+        return new ServerSettings(options, ui, publicLinks, ParseProxies(options.TrustedProxies), ParseWidths(options.Widths));
+    }
+
+    private static List<int> ParseWidths(string value)
+    {
+        var widths = new SortedSet<int>();
+        foreach (var entry in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!int.TryParse(entry, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var width) || width is < 16 or > 8192)
+                throw new StartupException($"MDU_ASSETS_WIDTHS contains '{entry}'; widths are whole numbers from 16 to 8192, separated by commas.");
+            widths.Add(width);
+        }
+
+        return [.. widths];
     }
 
     private static Uri BaseUrl(string? value, string? fallback, string name)

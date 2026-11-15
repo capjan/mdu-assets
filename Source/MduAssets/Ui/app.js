@@ -5,6 +5,7 @@ import {
     dateFormat, openDialog, plural, readSetting, request, send, writeSetting,
 } from "./common.js";
 import { showDetails } from "./details.js";
+import { buildSnippet, findPairs, formats as snippetFormats, optionControls, readOptions, writeOptions } from "./snippets.js";
 import { showAccount, showAdmin, showNewProject, showSettings } from "./pages.js";
 
 const params = new URLSearchParams(location.search);
@@ -72,6 +73,12 @@ function showPage(name) {
 async function load() {
     const me = await request("/me");
     state.me = me;
+    state.snippetOptions = readOptions(me.name);
+    $("snippet-options").replaceChildren(optionControls(state.snippetOptions, me.widths, (options) => {
+        state.snippetOptions = options;
+        writeOptions(me.name, options);
+        for (const card of state.cards.values()) card.refresh?.();
+    }));
     $("user-name").textContent = me.name;
     $("admin-link").hidden = !me.isAdmin;
     $("new-project-link").hidden = !me.canCreateProjects;
@@ -119,7 +126,7 @@ async function load() {
     if (project && state.asset) {
         showPage("asset");
         await loadFolders();
-        await showDetails(project, state.asset, { editable: canEdit(), onFolderChange: loadFolders });
+        await showDetails(project, state.asset, { editable: canEdit(), onFolderChange: loadFolders, me: state.me });
         return;
     }
 
@@ -564,7 +571,7 @@ function renderAssets() {
                 "data-id": asset.id,
                 "aria-label": `${asset.fileName}, ${formatDimensions(asset)}, ${formatSize(asset.size)}${selected ? ", selected" : ""}`,
             }, [
-                element("span", { class: "asset-thumb" }, [element("img", { src: asset.url, alt: "", loading: "lazy", decoding: "async", draggable: "false" })]),
+                element("span", { class: "asset-thumb" }, [element("img", { src: thumbnail(asset), alt: "", loading: "lazy", decoding: "async", draggable: "false" })]),
                 element("span", { class: "asset-meta" }, [
                     element("span", { class: "asset-name", text: asset.fileName, title: asset.fileName }),
                     element("span", { class: "asset-detail", text: `${formatDimensions(asset)} · ${formatSize(asset.size)}` }),
@@ -582,7 +589,7 @@ function renderAssets() {
             const box = checkbox(asset);
             box.removeAttribute("tabindex");
             const link = draggable(element("a", { class: "row-button", href: detailsLink(asset), "data-id": asset.id }, [
-                element("img", { src: asset.url, alt: "", loading: "lazy", decoding: "async", draggable: "false" }),
+                element("img", { src: thumbnail(asset), alt: "", loading: "lazy", decoding: "async", draggable: "false" }),
                 element("span", { text: asset.fileName }),
             ]), asset);
             return element("tr", { class: state.selected.has(asset.id) ? "is-selected" : "" }, [
@@ -647,15 +654,15 @@ for (const button of document.querySelectorAll("#asset-table th button")) {
 }
 
 // Snippets
-const formats = {
-    markdown: { label: "Markdown", text: (asset) => asset.markdown },
-    url: { label: "URL", text: (asset) => asset.url },
-    html: { label: "HTML", text: (asset) => asset.html },
-};
+const formats = Object.fromEntries(Object.entries(snippetFormats).map(([key, label]) => [key, { label }]));
 
+// Light and dark pairs and the MDU switches (frame, zoom, width) shape every snippet (LNK-06, LNK-07).
 function snippetText(asset) {
-    return (formats[state.format] ?? formats.markdown).text(asset);
+    return buildSnippet(asset, state.format in formats ? state.format : "markdown", state.snippetOptions);
 }
+
+/** The preview from the signed-in thumbnail endpoint (DLV-06); absolute, like every API URL here. */
+const thumbnail = (asset) => `${location.origin}${asset.thumbnailUrl}`;
 
 const copyIcon = () => {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -689,6 +696,36 @@ function createCard(title) {
         stateText.textContent = message;
         stateText.classList.add("is-error");
     };
+    // The content is already in the project: offer the existing image or a second copy (UP-09).
+    card.duplicate = (existing, uploadAnyway) => {
+        card.uploading = false;
+        progress.hidden = true;
+        stateText.textContent = `Already in this project as ${existing.fileName}.`;
+        stateText.classList.remove("is-error");
+        const useExisting = element("button", { class: "primary-button", type: "button", text: "Use the existing image" });
+        const again = element("button", { class: "secondary-button", type: "button", text: "Upload a second copy" });
+        const actions = element("div", { class: "form-actions" }, [useExisting, again]);
+        useExisting.addEventListener("click", () => {
+            card.fill(existing);
+            card.copyButton?.focus();
+            announce(`Showing the snippet of ${existing.fileName}.`);
+        });
+        again.addEventListener("click", () => {
+            actions.remove();
+            card.uploading = true;
+            progress.hidden = false;
+            progress.value = 0;
+            stateText.textContent = "";
+            uploadAnyway().then((asset) => {
+                if (asset && typeof asset === "object") {
+                    card.copyButton?.focus();
+                    announce(`Uploaded ${asset.fileName}.`);
+                    refreshProjectCounts();
+                }
+            });
+        });
+        body.append(actions);
+    };
     card.fill = (asset) => {
         card.asset = asset;
         card.uploading = false;
@@ -699,7 +736,7 @@ function createCard(title) {
         stateText.textContent = `${formatDimensions(asset)} · ${formatSize(asset.size)}`;
         stateText.classList.remove("is-error");
         name.textContent = asset.fileName;
-        preview.replaceChildren(element("img", { src: asset.url, alt: "" }));
+        preview.replaceChildren(element("img", { src: thumbnail(asset), alt: "" }));
 
         const readOnly = !canEdit();
         const fileName = element("input", { type: "text", value: asset.fileName, spellcheck: "false", autocomplete: "off", readonly: readOnly });
@@ -788,6 +825,7 @@ $("copy-all").addEventListener("click", async () => {
 // Clear keeps cards whose upload is still running; their snippets appear when the upload finishes.
 $("clear-snippets").addEventListener("click", () => {
     state.cards.clear();
+    $("pair-suggestions").replaceChildren();
     for (const item of [...$("snippet-list").children]) if (!item.card?.uploading) item.remove();
     $("snippets").hidden = $("snippet-list").children.length === 0;
     updateCopyAll();
@@ -806,13 +844,17 @@ function pastedName(file) {
     return `screenshot-${stamp}.${extension}`;
 }
 
-function upload(file, name, alt) {
-    const card = createCard(name);
+/**
+ * Uploads one file. Content that is already in the project is reported first (UP-09): the card then offers the existing
+ * image or a second copy. Resolves with the new asset, "duplicate", or null on failure.
+ */
+function upload(file, name, alt, { keepDuplicate = false, card = createCard(name) } = {}) {
     return new Promise((resolve) => {
         const xhr = new XMLHttpRequest();
         // Uploads land in the folder that is open.
         const folder = folderId() ? `&folder=${folderId()}` : "";
-        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${folder}`);
+        const duplicates = keepDuplicate ? "" : "&duplicates=reject";
+        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${folder}${duplicates}`);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.setRequestHeader("Accept", "application/json");
         xhr.responseType = "json";
@@ -824,6 +866,9 @@ function upload(file, name, alt) {
                 card.fill(xhr.response);
                 replaceAsset(xhr.response);
                 resolve(xhr.response);
+            } else if (xhr.status === 409 && xhr.response?.existing) {
+                card.duplicate(xhr.response.existing, () => upload(file, name, alt, { keepDuplicate: true, card }));
+                resolve("duplicate");
             } else {
                 card.fail(xhr.response?.detail || xhr.response?.title || `Upload failed (${xhr.status}).`);
                 resolve(null);
@@ -850,15 +895,18 @@ async function uploadFiles(files, { pasted = false } = {}) {
     }
 
     announce(`Uploading ${images.length} ${images.length === 1 ? "image" : "images"}…`);
-    const results = (await Promise.all(images.map((file) =>
+    const outcomes = await Promise.all(images.map((file) =>
         pasted || !file.name
             ? upload(file, pastedName(file), "Screenshot")
-            : upload(file, file.name)))).filter(Boolean);
+            : upload(file, file.name)));
+    const results = outcomes.filter((outcome) => outcome && typeof outcome === "object");
+    const duplicates = outcomes.filter((outcome) => outcome === "duplicate").length;
 
     if (results.length === 0) {
-        announce("The upload failed.");
+        announce(duplicates ? `${plural(duplicates, "image is", "images are")} already in the project. Choose on the card what to do.` : "The upload failed.");
         return;
     }
+    suggestPairs(results);
     // Copy right away where the browser allows it; otherwise the Copy button is one click away.
     const copied = await copyText(results.map(snippetText).join("\n"));
     const names = results.length === 1 ? results[0].fileName : `${results.length} images`;
@@ -867,6 +915,38 @@ async function uploadFiles(files, { pasted = false } = {}) {
     if (copied) for (const button of buttons) flashCopied(button, true);
     buttons[0]?.focus({ preventScroll: true });
     refreshProjectCounts();
+}
+
+/** Offers to pair uploads named like *-light.png and *-dark.png (LNK-06). */
+function suggestPairs(assets) {
+    for (const { light, dark } of findPairs(assets)) {
+        const pair = element("button", { class: "primary-button", type: "button", text: "Pair as light and dark" });
+        const dismiss = element("button", { class: "secondary-button", type: "button", text: "Not a pair" });
+        const suggestion = element("li", { class: "notice pair-suggestion" }, [
+            element("p", { text: `${light.fileName} and ${dark.fileName} look like the light and dark variant of one image.` }),
+            element("div", { class: "form-actions" }, [pair, dismiss]),
+        ]);
+        pair.addEventListener("click", async () => {
+            try {
+                const paired = await send(`/assets/${encodeURIComponent(light.id)}/pair`, "PUT", { partnerId: dark.id, role: "light" });
+                const partner = await request(`/assets/${encodeURIComponent(dark.id)}`);
+                for (const asset of [paired, partner]) {
+                    state.cards.get(asset.id)?.fill(asset);
+                    replaceAsset(asset);
+                }
+                suggestion.remove();
+                state.cards.get(paired.id)?.copyButton?.focus();
+                announce(`Paired ${light.fileName} and ${dark.fileName}. Their Markdown snippet has both lines.`);
+            } catch (error) {
+                announce(error.message);
+            }
+        });
+        dismiss.addEventListener("click", () => {
+            suggestion.remove();
+            $("upload-button").focus();
+        });
+        $("pair-suggestions").append(suggestion);
+    }
 }
 
 async function refreshProjectCounts() {

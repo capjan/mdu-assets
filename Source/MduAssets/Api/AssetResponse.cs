@@ -24,17 +24,39 @@ public sealed record AssetResponse(
     string Sha256,
     int Version,
     string UploadedBy,
-    DateTimeOffset CreatedAt)
+    DateTimeOffset CreatedAt,
+    string ThumbnailUrl,
+    bool Animated,
+    AssetPair? Pair)
 {
     public static AssetResponse From(AssetFile asset, ServerSettings settings)
     {
         var url = settings.PublicLink(asset.Id, asset.FileName);
+        AssetPair? pair = null;
+        if (asset is { PairId: { } pairId, PairRole: { } role, PairFileName: { } pairName })
+        {
+            // Both lines carry this asset's alt text, as MDU expects for a light and dark pair (LNK-06).
+            var partnerUrl = settings.PublicLink(pairId, pairName);
+            var (light, dark) = role == "light" ? (url, partnerUrl) : (partnerUrl, url);
+            pair = new AssetPair(pairId, role, partnerUrl, Snippets.Markdown(asset.AltText, light + "#only-light") + "\n" + Snippets.Markdown(asset.AltText, dark + "#only-dark"));
+        }
+
         return new AssetResponse(
             asset.Id, asset.ProjectSlug, asset.FolderId, url, asset.FileName, asset.AltText, asset.Description, asset.Tags,
             Snippets.Markdown(asset.AltText, url), Snippets.Html(asset.AltText, url, asset.Width, asset.Height),
-            asset.Width, asset.Height, asset.Size, asset.ContentType, asset.BlobSha256, asset.Version, asset.UploadedBy, asset.CreatedAt);
+            asset.Width, asset.Height, asset.Size, asset.ContentType, asset.BlobSha256, asset.Version, asset.UploadedBy, asset.CreatedAt,
+            $"/api/v1/assets/{asset.Id}/thumbnail?v={asset.BlobSha256[..12]}", asset.Animated, pair);
     }
 }
+
+/// <summary>The other half of a light and dark pair; <c>Role</c> is this asset's role, <c>Markdown</c> holds both lines.</summary>
+public sealed record AssetPair(string Id, string Role, string PartnerUrl, string Markdown);
+
+/// <summary>Pairs an asset with another one of the same project; <c>Role</c> is light or dark for this asset.</summary>
+public sealed record PairChange(string? PartnerId, string? Role);
+
+/// <summary>The answer to an upload whose content is already in the project, when the caller asked to hear about it (UP-09).</summary>
+public sealed record DuplicateResponse(string Title, string Detail, AssetResponse Existing);
 
 /// <summary>One page of assets; <c>Next</c> is set when another page follows.</summary>
 public sealed record AssetList(IReadOnlyList<AssetResponse> Items, string? Next);
@@ -75,11 +97,12 @@ public sealed record ProjectResponse(
     long TotalSize,
     DateTimeOffset? LastUpload,
     string Role,
-    bool IsMember)
+    bool IsMember,
+    bool ConvertFormats)
 {
     public static ProjectResponse From(ProjectSummary project, bool isAdmin) =>
         new(project.Slug, project.Name, project.Description, project.AssetCount, project.TotalSize, project.LastUpload,
-            (project.Role ?? (isAdmin ? ProjectRole.Owner : ProjectRole.Viewer)).ToText(), project.Role is not null);
+            (project.Role ?? (isAdmin ? ProjectRole.Owner : ProjectRole.Viewer)).ToText(), project.Role is not null, project.ConvertFormats);
 }
 
 public sealed record ProjectList(IReadOnlyList<ProjectResponse> Items);
@@ -87,7 +110,7 @@ public sealed record ProjectList(IReadOnlyList<ProjectResponse> Items);
 public sealed record NewProject(string? Slug, string? Name, string? Description);
 
 /// <summary>Changes to a project; the slug never changes, so tool configurations keep working.</summary>
-public sealed record ProjectChanges(string? Name, string? Description);
+public sealed record ProjectChanges(string? Name, string? Description, bool? ConvertFormats = null);
 
 public sealed record MemberResponse(string UserName, string Role, bool IsLocked);
 
@@ -95,7 +118,8 @@ public sealed record MemberList(IReadOnlyList<MemberResponse> Items);
 
 public sealed record MemberChange(string? Role);
 
-public sealed record MeResponse(string Name, bool IsAdmin, bool MustChangePassword, bool CanCreateProjects);
+/// <summary>The signed-in user and what this instance offers them; <c>Widths</c> are the sizes <c>?w=</c> may ask for.</summary>
+public sealed record MeResponse(string Name, bool IsAdmin, bool MustChangePassword, bool CanCreateProjects, IReadOnlyList<int> Widths);
 
 public sealed record PasswordChange(string? CurrentPassword, string? NewPassword);
 
@@ -135,6 +159,8 @@ public sealed record ServerInfo(string UiBaseUrl, string PublicBaseUrl, long Max
 [JsonSerializable(typeof(AssetResponse))]
 [JsonSerializable(typeof(AssetList))]
 [JsonSerializable(typeof(AssetChanges))]
+[JsonSerializable(typeof(PairChange))]
+[JsonSerializable(typeof(DuplicateResponse))]
 [JsonSerializable(typeof(AssetMove))]
 [JsonSerializable(typeof(AssetMoveResult))]
 [JsonSerializable(typeof(FolderResponse))]

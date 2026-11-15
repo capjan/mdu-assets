@@ -12,7 +12,7 @@ public sealed class UploadTest : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private readonly TestServer _server = new(new() { ["MaxUploadBytes"] = "4096", ["MaxPixels"] = "1000000" });
+    private readonly TestServer _server = new(new() { ["MaxUploadBytes"] = "200000", ["MaxPixels"] = "1000000" });
 
     public void Dispose() => _server.Dispose();
 
@@ -29,7 +29,7 @@ public sealed class UploadTest : IDisposable
     [Fact]
     public async Task UploadsARawBodyAndReturnsTheLinkAndSnippets()
     {
-        var response = await Post(Raw(TestImages.Png(1000, 500), "image/png"), "?name=Screen%20Shot%20(2).PNG");
+        var response = await Post(Raw(SampleImages.Png(1000, 500), "image/png"), "?name=Screen%20Shot%20(2).PNG");
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var asset = await response.Content.ReadFromJsonAsync<AssetResponse>(Json, TestContext.Current.CancellationToken);
@@ -50,7 +50,7 @@ public sealed class UploadTest : IDisposable
     {
         using var form = new MultipartFormDataContent
         {
-            { Raw(TestImages.Gif(10, 20)), "file", "ignored.bin" },
+            { Raw(SampleImages.AnimatedGif(10, 20, 2)), "file", "ignored.bin" },
             { new StringContent("Animated [demo]"), "alt" },
             { new StringContent("demo animation.gif"), "name" },
         };
@@ -66,7 +66,7 @@ public sealed class UploadTest : IDisposable
     [Fact]
     public async Task TakesTheTypeFromTheContentNotTheName()
     {
-        var asset = await (await Post(Raw(TestImages.Jpeg(30, 20), "image/png"), "?name=photo.png"))
+        var asset = await (await Post(Raw(SampleImages.Jpeg(30, 20), "image/png"), "?name=photo.png"))
             .Content.ReadFromJsonAsync<AssetResponse>(Json, TestContext.Current.CancellationToken);
 
         Assert.NotNull(asset);
@@ -101,7 +101,7 @@ public sealed class UploadTest : IDisposable
     [Fact]
     public async Task RejectsFilesOverTheSizeLimit()
     {
-        var data = TestImages.Png(10, 10).Concat(new byte[5000]).ToArray();
+        var data = SampleImages.Png(10, 10).Concat(new byte[210_000]).ToArray();
 
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, (await Post(Raw(data, "image/png"))).StatusCode);
     }
@@ -109,6 +109,7 @@ public sealed class UploadTest : IDisposable
     [Fact]
     public async Task RejectsImagesOverThePixelLimitBeforeDecoding()
     {
+        // Only a header: the limit must hold before anything decodes the pixels.
         var response = await Post(Raw(TestImages.Png(2000, 2000), "image/png"));
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
@@ -118,14 +119,14 @@ public sealed class UploadTest : IDisposable
     public async Task RejectsEmptyUploadsAndUnknownProjects()
     {
         Assert.Equal(HttpStatusCode.BadRequest, (await Post(Raw([]))).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await Post(Raw(TestImages.Png(1, 1)), project: "nope")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await Post(Raw(SampleImages.Png(1, 1)), project: "nope")).StatusCode);
     }
 
     [Fact]
     public async Task StoresIdenticalContentOnceButCreatesTwoAssets()
     {
-        var first = await (await Post(Raw(TestImages.Png(5, 5)))).Content.ReadFromJsonAsync<AssetResponse>(Json, TestContext.Current.CancellationToken);
-        var second = await (await Post(Raw(TestImages.Png(5, 5)))).Content.ReadFromJsonAsync<AssetResponse>(Json, TestContext.Current.CancellationToken);
+        var first = await (await Post(Raw(SampleImages.Png(5, 5)))).Content.ReadFromJsonAsync<AssetResponse>(Json, TestContext.Current.CancellationToken);
+        var second = await (await Post(Raw(SampleImages.Png(5, 5)))).Content.ReadFromJsonAsync<AssetResponse>(Json, TestContext.Current.CancellationToken);
 
         Assert.NotEqual(first!.Id, second!.Id);
         Assert.Single(Directory.EnumerateFiles(Path.Combine(_server.DataDirectory, "blobs"), "*", SearchOption.AllDirectories));

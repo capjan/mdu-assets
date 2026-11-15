@@ -93,6 +93,8 @@
                 <button class="secondary-button" id="copy-all" type="button" hidden>Copy all</button>
                 <button class="secondary-button" id="clear-snippets" type="button">Clear</button>
             </div>
+            <div class="snippet-options-row" id="snippet-options" aria-label="Snippet options" role="group"></div>
+            <ul class="pair-suggestions" id="pair-suggestions"></ul>
             <ol class="snippet-list" id="snippet-list"></ol>
         </section>
 
@@ -161,7 +163,14 @@
             <div class="asset-side">
                 <section class="panel" aria-labelledby="asset-snippets-heading">
                     <h2 id="asset-snippets-heading">Snippets</h2>
+                    <div class="snippet-options-row" id="asset-snippet-options" role="group" aria-label="Snippet options"></div>
+                    <label class="field"><span>Caption</span><input id="asset-caption" type="text" autocomplete="off" aria-describedby="asset-caption-hint"></label>
+                    <p class="form-hint" id="asset-caption-hint">Wraps the image in an MDU figure; not saved.</p>
                     <div class="snippet-rows" id="asset-snippets"></div>
+                </section>
+                <section class="panel" aria-labelledby="asset-pair-heading">
+                    <h2 id="asset-pair-heading">Light and dark</h2>
+                    <div class="pair-panel" id="asset-pair"></div>
                 </section>
                 <section class="panel" aria-labelledby="asset-details-heading">
                     <h2 id="asset-details-heading">Description</h2>
@@ -200,6 +209,7 @@
             <form class="form" id="details-form">
                 <label class="field"><span>Name</span><input id="details-name" type="text" maxlength="100" required autocomplete="off"></label>
                 <label class="field"><span>Description</span><input id="details-description" type="text" maxlength="500" autocomplete="off"></label>
+                <label class="checkbox"><input id="details-convert" type="checkbox"> Deliver WebP and AVIF copies when they are smaller</label>
                 <p class="form-hint">The short name and all image links stay the same when you rename the project.</p>
                 <div class="form-actions"><button class="primary-button" type="submit">Save</button></div>
             </form>
