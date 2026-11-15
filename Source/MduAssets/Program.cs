@@ -33,6 +33,15 @@ else
 // unencrypted keys would only be noise on every start. The keys folder is readable by the server user only.
 builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager", LogLevel.Error);
 
+// mdu-assets backup <target>: copy the instance and exit (NF-06).
+if (args is ["backup", var backupTarget])
+    return BackupCommand.Run(builder.Configuration["DataDirectory"] ?? "data", backupTarget);
+if (args is ["backup", ..])
+{
+    Console.Error.WriteLine("Usage: mdu-assets backup <empty target folder>");
+    return 2;
+}
+
 ServerSettings settings;
 DataDirectory dataDirectory;
 Database database;
@@ -62,6 +71,9 @@ builder.Services.AddSingleton(database);
 builder.Services.AddSingleton<BlobStore>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<TokenStore>();
+builder.Services.AddSingleton<AuditStore>();
+builder.Services.AddSingleton<SignInThrottle>();
+builder.Services.AddSingleton<NotFoundThrottle>();
 builder.Services.AddSingleton<AssetStore>();
 builder.Services.AddSingleton<FolderStore>();
 builder.Services.AddSingleton<VariantStore>();
@@ -95,6 +107,10 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(limiter =>
 {
     limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Uploads and new versions per signed-in user (OPS-05).
+    limiter.AddPolicy(UploadLimits.Policy, context => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = settings.Options.UploadsPerMinute, Window = TimeSpan.FromMinutes(1) }));
     limiter.AddPolicy(CheckEndpoint.RateLimitPolicy, context => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }));
@@ -125,6 +141,7 @@ app.UsePasswordChangeGate();
 app.UsePasswordOnlyGate();
 app.UseAuthorization();
 app.UseRateLimiter();
+app.UseAuditLog();
 
 app.MapHealthChecks("/healthz");
 
@@ -145,6 +162,8 @@ FolderEndpoints.Map(api);
 LifecycleEndpoints.Map(api);
 ProjectEndpoints.Map(api);
 UserEndpoints.Map(api, admin);
+AuditEndpoints.Map(api, admin);
+TransferEndpoints.Map(api);
 
 // Web interface: only on the UI host, signed in, so the browser asks for the password on the first visit.
 var ui = app.MapGroup("").RequireHost(settings.UiHost).RequireAuthorization();

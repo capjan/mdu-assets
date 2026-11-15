@@ -51,6 +51,11 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 | `MDU_ASSETS_MAXUPLOADBYTES` | `20971520` (20 MB) | Largest upload |
 | `MDU_ASSETS_MAXPIXELS` | `50000000` | Largest image in pixels, checked before decoding |
 | `MDU_ASSETS_PUBLICMAXAGESECONDS`, `MDU_ASSETS_PUBLICSTALEWHILEREVALIDATESECONDS` | `300`, `86400` | Caching of public links |
+| `MDU_ASSETS_SIGNINFAILURES` | `10` | Failed sign-ins per user or address within 15 minutes before further tries get 429 |
+| `MDU_ASSETS_UPLOADSPERMINUTE` | `60` | Uploads, new versions and imports per user and minute |
+| `MDU_ASSETS_PUBLICNOTFOUNDPERMINUTE` | `100` | 404 answers on public links per address and minute before 429 |
+| `MDU_ASSETS_AUDITRETENTIONDAYS` | `365` | Days audit entries are kept |
+| `MDU_ASSETS_MAXIMPORTBYTES` | `2147483648` (2 GB) | Largest project export accepted for import |
 | `MDU_ASSETS_STATSFLUSHSECONDS` | `10` | How often counted requests are written to the database |
 | `MDU_ASSETS_BOTUSERAGENTS` | `bot,crawl,spider,…` | Comma-separated parts of user agents whose requests are not counted |
 | `MDU_ASSETS_TRASHRETENTIONDAYS` | `30` | Days an asset stays in the trash before it is deleted for good |
@@ -72,7 +77,7 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 
 ## Backup and restore
 
-`mdu-assets backup <target>` writes a consistent copy of the database and the blobs. Where the copy goes (storage box, snapshot, other host) is the operator's choice. `variants/` and `tmp/` are not needed for a restore.
+`mdu-assets backup <target>` writes a consistent copy of the database (SQLite online backup), the blobs it refers to and the keys, also while the server runs; the [deployment guide](../Deployment.md#backup) shows it for Docker. Where the copy goes (storage box, snapshot, other host) is the operator's choice. `variants/` and `tmp/` are not needed for a restore.
 
 ## Other ways to run
 

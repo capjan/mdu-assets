@@ -163,21 +163,23 @@ The database schema is migrated on start. Public links never change between vers
 
 ## Backup
 
-All state is in the `data` volume. Until the backup command arrives (milestone M9), stop the server for a consistent copy:
+All state is in the `data` volume. `mdu-assets backup <folder>` writes a consistent copy while the server runs: the database through SQLite's online backup, then every file it refers to, and the keys. The target folder must be new or empty. In the container, run the program itself; the image has no shell:
 
 ```bash
-cd /opt/mdu-assets && docker compose stop mdu-assets
+cd /opt/mdu-assets && docker compose exec mdu-assets /app/mdu-assets backup /data/backups/$(date +%F)
 ```
+
+Then move the copy off the server, for example to a storage box, and remove it from the volume:
 
 ```bash
-docker run --rm -v mdu-assets_data:/data -v "$PWD":/backup alpine tar czf /backup/mdu-assets-data.tar.gz -C /data .
+docker run --rm -v mdu-assets_data:/data -v "$PWD":/backup alpine sh -c 'tar czf /backup/mdu-assets-$(date +%F).tar.gz -C /data/backups . && rm -rf /data/backups'
 ```
 
-```bash
-docker compose start mdu-assets
-```
+To restore, stop the server, replace the contents of the volume with a backup folder and start it again. Previews and converted copies are made again when they are requested.
 
-The folder `tmp/` in the volume can be left out.
+## Moving projects
+
+Owners export a project in **Project settings** as a zip with the current or all versions; admins (or everybody, when an admin allows creating projects) import it on **New project**. Image ids stay the same where the target server has not used them; the others get new ids, listed after the import ([ADR-0018](Architecture/Architecture-Decisions/0018-Import-Id-Collisions.md)).
 
 ## Sign-in
 

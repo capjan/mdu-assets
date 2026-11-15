@@ -78,8 +78,14 @@ public static class ProjectEndpoints
         if (changes.MaxVersions is < 0 or > 1000)
             return Invalid("Invalid version limit", "Keep 1 to 1000 versions, or 0 for all.");
         var maxVersions = changes.MaxVersions is null ? target.MaxVersions : changes.MaxVersions == 0 ? null : changes.MaxVersions;
+        if (changes.MaxFileBytes is < 0 || changes.QuotaBytes is < 0)
+            return Invalid("Invalid limit", "Limits are a number of bytes, or 0 for none.");
+        var maxFileBytes = changes.MaxFileBytes is null ? target.MaxFileBytes : changes.MaxFileBytes == 0 ? null : changes.MaxFileBytes;
+        if (changes.QuotaBytes is not null && !user.IsAdmin())
+            return TypedResults.Problem("Only admins set the storage quota of a project.", statusCode: StatusCodes.Status403Forbidden, title: "Not allowed");
+        var quotaBytes = changes.QuotaBytes is null ? target.QuotaBytes : changes.QuotaBytes == 0 ? null : changes.QuotaBytes;
 
-        if (projects.Update(target.Id, name.Trim(), description.Trim(), convertFormats, maxVersions) is null)
+        if (projects.Update(target.Id, name.Trim(), description.Trim(), convertFormats, maxVersions, maxFileBytes, quotaBytes) is null)
             return ProjectAccess.UnknownProject(project);
         return TypedResults.Ok(Summary(user, projects, target.Id));
     }

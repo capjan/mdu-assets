@@ -28,7 +28,7 @@ public static class UserEndpoints
 
     private static MeResponse Me(ClaimsPrincipal user, SettingsStore settings, ServerSettings server) =>
         new(user.Identity?.Name ?? string.Empty, user.IsAdmin(), user.MustChangePassword(),
-            user.IsAdmin() || settings.GetFlag(SettingsStore.UsersCanCreateProjects), server.Widths);
+            user.IsAdmin() || settings.GetFlag(SettingsStore.UsersCanCreateProjects), server.Widths, server.Options.MaxUploadBytes);
 
     /// <summary>Replaces the caller's password; the current one must be given again, also for start passwords.</summary>
     private static Results<NoContent, ProblemHttpResult> ChangePassword(PasswordChange change, ClaimsPrincipal user, UserStore users)

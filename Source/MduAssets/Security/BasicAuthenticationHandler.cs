@@ -19,6 +19,8 @@ public sealed class BasicAuthenticationHandler(
     UserStore users,
     TokenStore tokens,
     CredentialCache credentials,
+    SignInThrottle throttle,
+    AuditStore audit,
     ServerSettings settings,
     TimeProvider time)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
@@ -26,6 +28,8 @@ public sealed class BasicAuthenticationHandler(
     public const string SchemeName = "Basic";
 
     public const string AdminRole = "admin";
+
+    private const string ThrottledKey = "mdu:sign-in-throttled";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -55,9 +59,27 @@ public sealed class BasicAuthenticationHandler(
             return Task.FromResult(AuthenticateResult.Fail("Malformed Basic credentials."));
         }
 
+        // Too many failed tries from this address or for this name: refuse without checking the password (AUTH-08).
+        var ip = Context.Connection.RemoteIpAddress?.ToString();
+        if (throttle.IsBlocked(ip, name))
+        {
+            Context.Items[ThrottledKey] = true;
+            return Task.FromResult(AuthenticateResult.Fail("Too many failed sign-ins; try again later."));
+        }
+
         var user = users.Find(name);
-        if (user is null || user.IsLocked || !credentials.Verify(user.Id, user.PasswordHash, password))
+        var checkedNow = false;
+        if (user is null || user.IsLocked || !credentials.Verify(user.Id, user.PasswordHash, password, out checkedNow))
+        {
+            throttle.Failed(ip, name);
+            audit.Write(new NewAuditEntry(user?.Id, name.Length > 100 ? name[..100] : name, null, null, "sign-in.failed", null,
+                user is null ? "unknown user" : user.IsLocked ? "locked" : "wrong password", ip));
             return Task.FromResult(AuthenticateResult.Fail("Invalid user name or password."));
+        }
+
+        // Basic Auth sends the password with every request; a sign-in is when it was checked rather than taken from the cache.
+        if (checkedNow)
+            audit.Write(new NewAuditEntry(user.Id, user.Name, null, null, "sign-in", null, null, ip));
 
         var claims = new List<Claim>
         {
@@ -79,8 +101,18 @@ public sealed class BasicAuthenticationHandler(
     /// </summary>
     private AuthenticateResult AuthenticateToken(string secret)
     {
+        var ip = Context.Connection.RemoteIpAddress?.ToString();
+        if (throttle.IsBlocked(ip, null))
+        {
+            Context.Items[ThrottledKey] = true;
+            return AuthenticateResult.Fail("Too many failed sign-ins; try again later.");
+        }
+
         if (!secret.StartsWith(TokenStore.Marker, StringComparison.Ordinal) || tokens.Find(secret) is not { } owner)
+        {
+            throttle.Failed(ip, null);
             return AuthenticateResult.Fail("Unknown API token.");
+        }
         var (token, user) = (owner.Token, owner.User);
         var now = time.GetUtcNow();
         if (user.IsLocked)
@@ -109,6 +141,14 @@ public sealed class BasicAuthenticationHandler(
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
+        // A blocked sign-in gets 429 without a password prompt, so the browser does not invite the next guess.
+        if (Context.Items.ContainsKey(ThrottledKey))
+        {
+            Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            Response.Headers.RetryAfter = ((int)throttle.Window.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return Task.CompletedTask;
+        }
+
         Response.Headers.WWWAuthenticate = "Basic realm=\"MDU Asset Server\", charset=\"UTF-8\"";
         return base.HandleChallengeAsync(properties);
     }

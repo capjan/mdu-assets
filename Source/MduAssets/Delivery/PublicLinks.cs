@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using MduAssets.Images;
+using MduAssets.Security;
 using MduAssets.Statistics;
 using MduAssets.Storage;
 using Microsoft.Net.Http.Headers;
@@ -19,17 +20,28 @@ public static partial class PublicLinks
     private const string SvgPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
 
     public static async Task<IResult> Serve(
-        string id, string? name, HttpContext context, AssetStore assets, Variants variants, UsageCounter counter, ServerSettings settings)
+        string id, string? name, HttpContext context, AssetStore assets, Variants variants, UsageCounter counter, NotFoundThrottle notFound,
+        ServerSettings settings)
     {
+        // Many 404s from one address look like guessing ids; such clients wait a minute (OPS-05).
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        if (notFound.IsBlocked(ip))
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         if (!AssetId.IsValid(id))
+        {
+            notFound.Record(ip);
             return Results.NotFound();
+        }
 
         // A version link starts its name with v<n>/; such content never changes (DLV-02).
         int? version = null;
         if (name is not null && VersionPrefix().Match(name) is { Success: true } match)
         {
             if (!int.TryParse(match.Groups[1].ValueSpan, NumberStyles.None, CultureInfo.InvariantCulture, out var number) || number < 1)
+            {
+                notFound.Record(ip);
                 return Results.NotFound();
+            }
             version = number;
         }
 
@@ -37,7 +49,10 @@ public static partial class PublicLinks
         if (status == DeliveryStatus.Gone)
             return Results.StatusCode(StatusCodes.Status410Gone);
         if (asset is null)
+        {
+            notFound.Record(ip);
             return Results.NotFound();
+        }
 
         // Counted once the answer is complete, so only 200 and 304 count (STA-02); widths and formats count as the image.
         context.Response.OnCompleted(() =>

@@ -213,3 +213,36 @@ export async function recentUse(assets) {
     }));
     return `Still in use: ${lines.join(" ")}${recent.length > 5 ? ` ${plural(recent.length - 5, "more image was", "more images were")} requested lately.` : ""}`;
 }
+
+const auditActions = {
+    "sign-in": "Signed in", "sign-in.failed": "Failed sign-in",
+    "asset.upload": "Uploaded", "asset.update": "Changed", "asset.move": "Moved images", "asset.pair": "Paired", "asset.unpair": "Unpaired",
+    "asset.version": "New version", "asset.version.restore": "Restored a version", "asset.version.delete": "Deleted a version",
+    "asset.trash": "Moved to the trash", "asset.restore": "Restored", "asset.purge": "Deleted for good", "trash.empty": "Emptied the trash",
+    "folder.create": "Created a folder", "folder.rename": "Renamed a folder", "folder.move": "Moved a folder", "folder.delete": "Deleted a folder",
+    "project.create": "Created the project", "project.import": "Imported a project", "project.update": "Changed the project", "project.delete": "Deleted a project",
+    "member.set": "Set a member", "member.remove": "Removed a member", "password.change": "Changed the password",
+    "token.create": "Created a token", "token.delete": "Revoked a token", "user.create": "Created a user", "user.update": "Changed a user",
+    "user.password-reset": "Reset a password", "settings.update": "Changed settings",
+};
+
+/** Shows an audit log (OPS-03) in a list, newest first, with a button for older entries. */
+export function showAudit(list, more, path) {
+    let before = null;
+    const load = async () => {
+        const page = await request(`${path}${before ? `?before=${before}` : ""}`);
+        list.append(...page.items.map((entry) => element("li", { class: "audit-entry" }, [
+            element("span", { class: "audit-time", text: dateFormat.format(new Date(entry.at)) }),
+            element("span", { class: "audit-text", text: [
+                entry.user ?? "Someone", auditActions[entry.action] ?? entry.action,
+                entry.target ? `– ${entry.target}` : "", entry.project ? `in ${entry.project}` : "",
+            ].filter(Boolean).join(" ") }),
+            ...(entry.details || entry.ip ? [element("span", { class: "audit-details", text: [entry.details, entry.ip].filter(Boolean).join(" · ") })] : []),
+        ])));
+        if (!list.children.length) list.append(element("li", { class: "form-hint", text: "Nothing recorded yet." }));
+        before = page.next;
+        more.hidden = !page.next;
+    };
+    more.addEventListener("click", () => load().catch((error) => announce(error.message)));
+    return load();
+}

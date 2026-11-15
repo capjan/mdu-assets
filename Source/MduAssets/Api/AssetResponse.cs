@@ -126,11 +126,15 @@ public sealed record ProjectResponse(
     bool IsMember,
     bool ConvertFormats,
     int TrashCount,
-    int? MaxVersions)
+    int? MaxVersions,
+    long UsedBytes,
+    long? QuotaBytes,
+    long? MaxFileBytes)
 {
     public static ProjectResponse From(ProjectSummary project, bool isAdmin) =>
         new(project.Slug, project.Name, project.Description, project.AssetCount, project.TotalSize, project.LastUpload,
-            (project.Role ?? (isAdmin ? ProjectRole.Owner : ProjectRole.Viewer)).ToText(), project.Role is not null, project.ConvertFormats, project.TrashCount, project.MaxVersions);
+            (project.Role ?? (isAdmin ? ProjectRole.Owner : ProjectRole.Viewer)).ToText(), project.Role is not null, project.ConvertFormats, project.TrashCount, project.MaxVersions,
+            project.UsedBytes, project.QuotaBytes, project.MaxFileBytes);
 }
 
 public sealed record ProjectList(IReadOnlyList<ProjectResponse> Items);
@@ -139,7 +143,9 @@ public sealed record NewProject(string? Slug, string? Name, string? Description)
 
 /// <summary>Changes to a project; the slug never changes, so tool configurations keep working.</summary>
 /// <remarks><c>MaxVersions</c>: 0 keeps all versions, a positive number keeps that many (VER-04).</remarks>
-public sealed record ProjectChanges(string? Name, string? Description, bool? ConvertFormats = null, int? MaxVersions = null);
+/// <remarks><c>MaxFileBytes</c> and <c>QuotaBytes</c>: 0 removes the limit. Only admins set the quota (OPS-02).</remarks>
+public sealed record ProjectChanges(
+    string? Name, string? Description, bool? ConvertFormats = null, int? MaxVersions = null, long? MaxFileBytes = null, long? QuotaBytes = null);
 
 public sealed record MemberResponse(string UserName, string Role, bool IsLocked);
 
@@ -148,7 +154,7 @@ public sealed record MemberList(IReadOnlyList<MemberResponse> Items);
 public sealed record MemberChange(string? Role);
 
 /// <summary>The signed-in user and what this instance offers them; <c>Widths</c> are the sizes <c>?w=</c> may ask for.</summary>
-public sealed record MeResponse(string Name, bool IsAdmin, bool MustChangePassword, bool CanCreateProjects, IReadOnlyList<int> Widths);
+public sealed record MeResponse(string Name, bool IsAdmin, bool MustChangePassword, bool CanCreateProjects, IReadOnlyList<int> Widths, long MaxUploadBytes);
 
 public sealed record PasswordChange(string? CurrentPassword, string? NewPassword);
 
@@ -233,6 +239,9 @@ public sealed record ServerInfo(string UiBaseUrl, string PublicBaseUrl, long Max
 [JsonSerializable(typeof(UserChanges))]
 [JsonSerializable(typeof(SettingsResponse))]
 [JsonSerializable(typeof(TokenList))]
+[JsonSerializable(typeof(AuditList))]
+[JsonSerializable(typeof(ExportManifest))]
+[JsonSerializable(typeof(ImportResult))]
 [JsonSerializable(typeof(CheckRequest))]
 [JsonSerializable(typeof(CheckResponse))]
 [JsonSerializable(typeof(NewToken))]

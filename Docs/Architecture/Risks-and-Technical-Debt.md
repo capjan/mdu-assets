@@ -30,7 +30,7 @@ Tracked as issues with the label [`decision`](https://github.com/capjan/mdu-asse
 | Q-02 | Is a CDN purge hook needed when an image is replaced? Answered by [ADR-0016](Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md): no, current links revalidate within five minutes | M6 |
 | Q-03 | Should MDU set a referrer policy for asset images? Answered by [ADR-0017](Architecture-Decisions/0017-Referrer-Policy-for-MDU-Pages.md): no, the browser default protects readers | M7 |
 | Q-04 | How many versions are kept by default? Answered by [ADR-0016](Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md): all, unless owners set a limit per project | M6 |
-| Q-05 | How does an import handle ID collisions? | M9 |
+| Q-05 | How does an import handle ID collisions? Answered by [ADR-0018](Architecture-Decisions/0018-Import-Id-Collisions.md): new ids for taken ones, listed in the answer | M9 |
 
 ## Technical debt
 

@@ -1,7 +1,7 @@
 // Project settings, new project, account and admin pages.
 import {
     $, announce, clearFormError, copyText, dateFormat, element, flashCopied, formatSize, handleSubmit, numberFormat, openDialog, plural,
-    request, send, shortDateFormat, showFormError,
+    request, send, shortDateFormat, showAudit, showFormError,
 } from "./common.js";
 
 const roles = [["viewer", "Viewer"], ["editor", "Editor"], ["owner", "Owner"]];
@@ -20,11 +20,27 @@ export async function showSettings(project, me) {
     $("details-description").value = project.description;
     $("details-convert").checked = project.convertFormats;
     $("details-max-versions").value = project.maxVersions ?? "";
+    // Limits (OPS-01, OPS-02): the upload limit is the owners' choice, the quota the admins'.
+    const megabytes = (bytes) => (bytes ? Math.round(bytes / 104857.6) / 10 : "");
+    $("details-max-file").value = megabytes(project.maxFileBytes);
+    $("details-max-file-hint").textContent = `0 or empty uses the limit of this server, ${formatSize(me.maxUploadBytes)}. A project can only go lower.`;
+    $("details-quota").value = megabytes(project.quotaBytes);
+    $("details-quota").disabled = !me.isAdmin;
+    const share = project.quotaBytes ? ` of ${formatSize(project.quotaBytes)} (${Math.round((project.usedBytes / project.quotaBytes) * 100)} %)` : "";
+    $("details-quota-hint").textContent = `The project uses ${formatSize(project.usedBytes)}${share}, counting old versions and the trash. ${me.isAdmin ? "0 or empty means no quota." : "Only admins change the quota."}`;
+
+    // Export (OPS-06) and the activity of the project (OPS-03).
+    const exportPath = `${location.origin}/api/v1/projects/${encodeURIComponent(project.slug)}/export`;
+    $("export-current").href = exportPath;
+    $("export-all").href = `${exportPath}?versions=all`;
+    showAudit($("activity-list"), $("activity-more"), `/projects/${encodeURIComponent(project.slug)}/audit`).catch((error) => announce(error.message));
     handleSubmit(details, async () => {
         clearFormError(details);
         const updated = await send(projectPath(project), "PATCH", {
             name: $("details-name").value, description: $("details-description").value, convertFormats: $("details-convert").checked,
             maxVersions: Number($("details-max-versions").value || 0),
+            maxFileBytes: Math.round(Number($("details-max-file").value || 0) * 1048576),
+            ...(me.isAdmin ? { quotaBytes: Math.round(Number($("details-quota").value || 0) * 1048576) } : {}),
         });
         project.name = updated.name;
         project.description = updated.description;
@@ -101,6 +117,7 @@ export async function showSettings(project, me) {
 // New project (admins, or everybody when an admin allows it).
 export function showNewProject() {
     document.title = "New project – MDU Assets";
+    setUpImport();
     const name = $("new-project-name");
     const slug = $("new-project-slug");
     let slugEdited = false;
@@ -155,6 +172,7 @@ export function showAccount(me, { forced = false, projects = [] } = {}) {
 // Admin: overview, users and settings (AUTH-04, OPS-04).
 export async function showAdmin(me) {
     document.title = "Admin – MDU Assets";
+    showAudit($("audit-list"), $("audit-more"), "/admin/audit").catch((error) => announce(error.message));
     const overview = await request("/admin/overview");
 
     const stat = (value, label) => element("li", {}, [element("span", { class: "stat-value", text: value }), element("span", { class: "stat-label", text: label })]);
@@ -439,4 +457,32 @@ function setUpTokens(projects) {
         });
     }
     render();
+}
+
+// Import of a project export (OPS-06); ids already used here change, and the result lists them (ADR-0018).
+function setUpImport() {
+    const form = $("import-form");
+    handleSubmit(form, async () => {
+        clearFormError(form);
+        const file = $("import-file").files[0];
+        const slug = $("import-slug").value.trim();
+        announce(`Importing ${file.name}…`);
+        const result = await request(`/projects/import?slug=${encodeURIComponent(slug)}`, {
+            method: "POST", headers: { "Content-Type": "application/zip" }, body: file,
+        });
+        const box = $("import-result");
+        const link = element("a", { href: `/?project=${encodeURIComponent(result.project.slug)}`, text: result.project.name });
+        const parts = [`Imported ${plural(result.assets, "image", "images")} into `, link, "."];
+        if (result.changedIds.length) {
+            parts.push(` ${plural(result.changedIds.length, "image has", "images have")} a new id, because this server used the old one; update links to them:`);
+            box.replaceChildren(element("p", {}, parts), element("ul", {}, result.changedIds.map((change) =>
+                element("li", {}, [element("code", { text: `/i/${change.oldId}/` }), " → ", element("code", { text: `/i/${change.newId}/` })]))));
+        } else {
+            parts.push(" All image links keep their ids.");
+            box.replaceChildren(element("p", {}, parts));
+        }
+        box.hidden = false;
+        box.focus();
+        announce(`Imported ${result.project.name}.`);
+    });
 }
