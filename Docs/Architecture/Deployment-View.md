@@ -93,6 +93,34 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 
 | Option | Notes |
 | --- | --- |
-| Native binary | Archive with the program, libvips and license texts for linux-x64, linux-arm64 and osx-arm64; macOS builds signed and notarized. |
+| Native binary | Archive `mdu-assets-<version>-<rid>.tar.gz` for linux-x64, linux-arm64 and osx-arm64 with a folder that holds the program, its native libraries (`libvips`, `libe_sqlite3`), `appsettings.json`, the README, the license and the third-party license texts. Run `mdu-assets` from that folder. The macOS program and libraries are signed and notarized. |
 | Local development | `dotnet run --project MduAssets` in `Source` serves the web interface and API on `http://127.0.0.1:5180` and public links on `http://127.0.0.1:5181`, keeps its data in `Source/MduAssets/data/` (ignored by Git), allows HTTP and creates the user `admin` with the password `development-only`. |
 | Image build | `docker build -t mdu-assets .` in `Source` builds for the architecture of the Docker host. |
+
+## Build and release pipeline
+
+Four GitHub Actions workflows check, ship and deploy the server. All builds run on native runners, never under emulation.
+
+| Workflow | Trigger | What it does |
+| --- | --- | --- |
+| CI (`ci.yml`) | Every pull request and push to `main` | Checks Conventional Commit messages and lints `Docs` with `mdu lint` |
+| Build (`build.yml`) | Changes under `Source/` | Tests, publishes the Native AOT program for each target and smoke-tests it, builds and smoke-tests the Docker image for amd64 and arm64, runs the NetVips spike |
+| Release (`release.yml`) | Started manually from `main` | Publishes a version, see below |
+| Deploy (`deploy.yml`) | Every successful Build run on `main` | Deploys that commit to the production instance, see above; independent of releases |
+
+The release workflow runs these jobs:
+
+```mermaid
+flowchart LR
+  P[prepare-release<br/>check secrets, git-cliff version and notes] --> T[test]
+  T --> N[build-native<br/>linux-x64, linux-arm64, osx-arm64]
+  T --> D[docker-image<br/>amd64, arm64, push by digest]
+  N --> R[release<br/>GitHub release with archives and SHA256SUMS]
+  D --> R
+  R --> M[publish-docker<br/>tags version and latest]
+```
+
+- git-cliff calculates the version from the Conventional Commits since the last `v*` tag (`Source/cliff.toml`; the first release is `v0.1.0`) and writes the release notes. The version goes into the program (`-p:Version`) and the image (`VERSION` build argument and OCI labels).
+- Each archive is extracted again and smoke-tested with `Source/smoke-test.sh`, after signing and notarization on macOS; each image is smoke-tested before it is pushed.
+- Images are pushed by digest and get the tags `capjan/mdu-assets:<version>` and `latest` only after the GitHub release is published, so a failed run leaves no tag behind. "Re-run failed jobs" resumes a run with the same version.
+- Secrets and variables: the Apple signing and notarization settings and the Docker Hub token as in MDU, listed in [AGENTS.md](https://github.com/capjan/mdu-assets/blob/main/AGENTS.md). The first job checks them before anything is built.

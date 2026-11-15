@@ -32,7 +32,7 @@ MDU sites are plain Markdown. Local images work well, but screenshots that chang
 
 | Path | Contents |
 | --- | --- |
-| [`Docs`](Docs) | All documentation, rendered with MDU: [requirements](Docs/Requirements.md) (German), [arc42 architecture](Docs/Architecture/README.md) with decisions, and the [NetVips AOT spike report](Docs/Architecture/NetVips-AOT-Spike.md) (German) |
+| [`Docs`](Docs) | All documentation, rendered with MDU: [requirements](Docs/Requirements.md), [arc42 architecture](Docs/Architecture/README.md) with decisions, and the [NetVips AOT spike report](Docs/Architecture/NetVips-AOT-Spike.md) (German) |
 | [`Source`](Source) | Everything that compiles: the server, its tests, the token sync tool and the [NetVips AOT spike](Source/Spikes/NetVipsAot) |
 
 The build workflow runs only when something under `Source/` changes.
@@ -61,7 +61,7 @@ The [NetVips AOT spike](Docs/Architecture/NetVips-AOT-Spike.md) is published and
 
 ## Contributing
 
-Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/) (`<type>[optional scope][!]: <description>`). Changes to `main` go through pull requests; CI lints the documentation and runs the spike on every supported platform.
+Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/) (`<type>[optional scope][!]: <description>`). Changes to `main` go through pull requests; CI lints the documentation and runs the spike on every supported platform. Releases are started manually from `main` with the Release workflow: git-cliff derives the version and notes, and the workflow publishes native archives on GitHub Releases and the multi-architecture image `capjan/mdu-assets` on Docker Hub.
 
 ## License
 

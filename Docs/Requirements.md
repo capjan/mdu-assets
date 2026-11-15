@@ -1,278 +1,278 @@
-# MDU Asset Server – Anforderungen
+# MDU Asset Server – Requirements
 
-Stand: 13.11.2026 · Status: Entwurf nach Anforderungsinterview · Arbeitsname: `mdu-assets`
+As of: 2026-11-13 · Status: draft after the requirements interview · Working name: `mdu-assets`
 
-## 1. Ziel
+## 1. Goal
 
-Der MDU Asset Server ist eine selbst gehostete Webanwendung, über die Autorinnen und Autoren von MDU-Dokumentationen Bilder hochladen und sofort einen dauerhaften Link erhalten, der sich direkt in Markdown einfügen lässt. Er wird als .NET-Native-AOT-Anwendung gebaut und verwendet das MDU-Design-System, damit er optisch zu MDU-Sites passt.
+The MDU Asset Server is a self-hosted web application where authors of MDU documentation upload images and immediately get a permanent link that can be pasted straight into Markdown. It is built as a .NET Native AOT application and uses the MDU design system, so it looks like an MDU site.
 
-Der Server ergänzt lokale Bilder in MDU-Projekten, er ersetzt sie nicht. Markdown-Dateien bleiben portabel: Ein Asset-Link ist eine gewöhnliche HTTPS-URL, die jeder Markdown-Viewer anzeigen kann.
+The server complements local images in MDU projects; it does not replace them. Markdown files stay portable: an asset link is an ordinary HTTPS URL that any Markdown viewer can display.
 
-## 2. Begriffe
+## 2. Terms
 
-| Begriff | Bedeutung |
+| Term | Meaning |
 | --- | --- |
-| Asset | Ein hochgeladenes Bild mit allen Versionen, Metadaten und Statistiken |
-| Asset-ID | Kurze, zufällige, nicht erratbare ID (Base62), die das Asset dauerhaft identifiziert |
-| Öffentlicher Link | `https://<public-host>/i/<asset-id>/<dateiname>` – ändert sich nie |
-| Version | Ein konkreter Dateiinhalt eines Assets; neue Versionen ersetzen den Inhalt unter demselben Link |
-| Projekt | Container für Assets, mit eigenen Mitgliedern |
-| Tag | Freies Schlagwort an einem Asset; ein Asset kann mehrere haben. Ordnet und filtert, beeinflusst den Link nicht. Tags ersetzen die früheren Ordner ([ADR-0020](Architecture/Architecture-Decisions/0020-Tags-Instead-of-Folders.md)). |
-| Snippet | Kopierfertiger Text für ein Asset, z. B. Markdown-Bild mit Alt-Text |
-| Hell/Dunkel-Paar | Zwei Assets, die als Light- und Dark-Variante desselben Bildes verknüpft sind |
+| Asset | An uploaded image with all its versions, metadata and statistics |
+| Asset ID | Short, random, unguessable ID (Base62) that identifies the asset permanently |
+| Public link | `https://<public-host>/i/<asset-id>/<file-name>` – never changes |
+| Version | One concrete file content of an asset; new versions replace the content under the same link |
+| Project | Container for assets, with its own members |
+| Tag | Free keyword on an asset; an asset can have several. Organizes and filters, does not affect the link. Tags replace the former folders ([ADR-0020](Architecture/Architecture-Decisions/0020-Tags-Instead-of-Folders.md)). |
+| Snippet | Ready-to-copy text for an asset, such as a Markdown image with alt text |
+| Light/dark pair | Two assets linked as the light and dark variant of the same image |
 
-## 3. Entscheidungen aus dem Interview
+## 3. Decisions from the interview
 
-| Thema | Entscheidung |
+| Topic | Decision |
 | --- | --- |
-| Link-Format | Kurz-ID + lesbarer Dateiname: `/i/k3F9xQ/architektur.png`; `/i/k3F9xQ` liefert dieselbe Datei |
-| Sichtbarkeit | Bilder sind öffentlich für jeden, der den Link kennt; IDs sind nicht erratbar |
-| Ersetzen | Neue Version unter gleichem Link, Versionshistorie mit Wiederherstellen |
-| Speicher | Dateisystem für Dateien, SQLite für Metadaten, ein Volume |
-| Projektrollen | Owner / Editor / Viewer |
-| API-Anmeldung | Persönliche API-Tokens (benannt, mit Ablauf, optional auf ein Projekt beschränkt, widerrufbar) |
-| Web-Anmeldung | Eigene Anmeldeseite mit Session-Cookie; später OIDC/SSO und Passkeys |
-| Benutzeranlage | Nur durch Admins; der erste Admin wird beim Start über Umgebungsvariablen angelegt |
-| Snippets | Markdown mit Alt-Text, Hell/Dunkel-Paar, MDU-Attribute, reine URL und HTML |
-| Bildverarbeitung | Metadaten entfernen, Format direkt nach dem Upload wählen (WebP), Vorschaubilder, Größen per Parameter; mit NetVips/libvips |
-| Dateitypen | Nur die MDU-Bildformate: png, jpg/jpeg, gif, webp, avif, bmp, svg |
-| Statistik | Zähler, letzter Abruf, verweisende Seiten; Bots und Abrufe aus der Verwaltungs-UI werden nicht gezählt |
-| mdu-CLI | Neuer Befehl `mdu assets upload`; `mdu lint` prüft Asset-Links |
-| Löschen | Papierkorb mit 30 Tagen Frist |
-| UI-Technik | Eingebettetes statisches HTML/CSS + Vanilla JavaScript, das die JSON-API nutzt |
-| Design | `tokens.css` aus dem MDU-Design-System übernehmen; ein Test prüft, dass die Kopie aktuell ist |
-| UI-Sprache | Englisch, wie MDU |
-| Ordnen und Finden | Tags (mehrere pro Bild), Suche und Filter, Rückwärtssuche über die URL |
-| Limits | Max. Dateigröße, Speicherquote pro Projekt, Rate Limiting, Audit-Log |
-| Betrieb | Docker-Image `capjan/mdu-assets`, native Binaries, eigenes Repository, Projekt-Export/-Import |
-| Erste Version | Enthält alle oben genannten Punkte außer den als „später“ markierten Anmeldearten |
+| Link format | Short ID + readable file name: `/i/k3F9xQ/architecture.png`; `/i/k3F9xQ` returns the same file |
+| Visibility | Images are public to anyone who knows the link; IDs are unguessable |
+| Replacing | New version under the same link, version history with restore |
+| Storage | File system for files, SQLite for metadata, one volume |
+| Project roles | Owner / Editor / Viewer |
+| API sign-in | Personal API tokens (named, with expiry, optionally limited to one project, revocable) |
+| Web sign-in | Own sign-in page with a session cookie; later OIDC/SSO and passkeys |
+| Creating users | Admins only; the first admin is created on start from environment variables |
+| Snippets | Markdown with alt text, light/dark pair, MDU attributes, plain URL and HTML |
+| Image processing | Strip metadata, choose the format right after the upload (WebP), thumbnails, sizes by parameter; with NetVips/libvips |
+| File types | Only the MDU image formats: png, jpg/jpeg, gif, webp, avif, bmp, svg |
+| Statistics | Counter, last request, referring pages; bots and requests from the management UI are not counted |
+| mdu CLI | New command `mdu assets upload`; `mdu lint` checks asset links |
+| Deleting | Trash with a 30-day retention period |
+| UI technology | Embedded static HTML/CSS + vanilla JavaScript that uses the JSON API |
+| Design | Take over `tokens.css` from the MDU design system; a test checks that the copy is current |
+| UI language | English, like MDU |
+| Organizing and finding | Tags (several per image), search and filters, reverse lookup by URL |
+| Limits | Max. file size, storage quota per project, rate limiting, audit log |
+| Operations | Docker image `capjan/mdu-assets`, native binaries, own repository, project export/import |
+| First version | Contains everything above except the sign-in methods marked "later" |
 
-## 4. Rollen und Berechtigungen
+## 4. Roles and permissions
 
-### 4.1 Systemrollen
+### 4.1 System roles
 
-| Rolle | Rechte |
+| Role | Rights |
 | --- | --- |
-| Admin | Sieht und verwaltet alle Projekte, verwaltet Benutzer, Quoten, globale Einstellungen, Audit-Log, Papierkorb aller Projekte |
-| Benutzer | Sieht nur Projekte, in denen er Mitglied ist; verwaltet eigenes Passwort und eigene API-Tokens |
+| Admin | Sees and manages all projects, manages users, quotas, global settings, the audit log and the trash of all projects |
+| User | Sees only projects they are a member of; manages their own password and API tokens |
 
-### 4.2 Projektrollen
+### 4.2 Project roles
 
-| Aktion | Viewer | Editor | Owner |
+| Action | Viewer | Editor | Owner |
 | --- | :-: | :-: | :-: |
-| Assets, Tags, Statistiken ansehen, Snippets kopieren | ✓ | ✓ | ✓ |
-| Hochladen, ersetzen, Metadaten bearbeiten, verschieben, taggen | | ✓ | ✓ |
-| Tags vergeben, umbenennen, zusammenführen, löschen | | ✓ | ✓ |
-| Assets in den Papierkorb legen und wiederherstellen | | ✓ | ✓ |
-| Mitglieder hinzufügen, Rollen ändern, entfernen | | | ✓ |
-| Projekt umbenennen, exportieren, löschen | | | ✓ |
-| Papierkorb endgültig leeren | | | ✓ |
+| View assets, tags and statistics, copy snippets | ✓ | ✓ | ✓ |
+| Upload, replace, edit metadata, move, tag | | ✓ | ✓ |
+| Assign, rename, merge and delete tags | | ✓ | ✓ |
+| Move assets to the trash and restore them | | ✓ | ✓ |
+| Add members, change roles, remove members | | | ✓ |
+| Rename, export and delete the project | | | ✓ |
+| Empty the trash permanently | | | ✓ |
 
-Ein Projekt hat immer mindestens einen Owner. Admins haben in jedem Projekt Owner-Rechte.
+A project always has at least one owner. Admins have owner rights in every project.
 
-## 5. Funktionale Anforderungen
+## 5. Functional requirements
 
-Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notfalls nachgezogen werden), **L** = Später.
+Priority: **M** = must (first version), **S** = should (first version, may follow later if needed), **L** = later.
 
-### 5.1 Anmeldung und Benutzer
+### 5.1 Sign-in and users
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| AUTH-01 | Die Web-UI hat eine eigene Anmeldeseite mit Benutzername und Passwort; ein Menü hinter dem Benutzernamen enthält Konto, Admin und Abmelden. Werkzeuge melden sich an der API mit HTTP Basic Auth oder einem API-Token an; Browser bekommen nie die Basic-Auth-Abfrage. Passwörter werden nur über HTTPS akzeptiert (direkt oder hinter einem Reverse Proxy mit `X-Forwarded-Proto`). | M |
-| AUTH-02 | Passwörter werden mit PBKDF2 (SHA-256, mindestens 600 000 Iterationen, zufälliges Salt) gespeichert. | M |
-| AUTH-03 | Beim ersten Start ohne Benutzer wird ein Admin aus `MDU_ASSETS_ADMIN_USER` und `MDU_ASSETS_ADMIN_PASSWORD` angelegt. Fehlen die Variablen, startet der Server mit einer klaren Fehlermeldung. | M |
-| AUTH-04 | Admins legen Benutzer mit Startpasswort an, sperren, entsperren, setzen Passwörter zurück und vergeben die Admin-Rolle. Der letzte Admin kann nicht entfernt oder gesperrt werden. | M |
-| AUTH-05 | Benutzer ändern ihr eigenes Passwort; ein Startpasswort muss bei der ersten Anmeldung geändert werden. | S |
-| AUTH-06 | Benutzer erzeugen persönliche API-Tokens mit Name, Ablaufdatum (Standard 90 Tage, „nie“ wählbar) und optionaler Beschränkung auf ein Projekt und auf Lese- oder Schreibrechte. Das Token wird nur einmal angezeigt und nur gehasht gespeichert. Die Liste zeigt Name, Präfix, Ablauf und letzte Nutzung. | M |
-| AUTH-07 | Tokens werden als `Authorization: Bearer <token>` übergeben. Ein Token hat höchstens die Rechte seines Benutzers. | M |
-| AUTH-08 | Fehlgeschlagene Anmeldungen werden pro Benutzer und IP begrenzt (Rate Limiting, siehe OPS-05). | M |
-| AUTH-09 | Session-Cookie (`HttpOnly`, `Secure`, `SameSite=Strict`), wahlweise „angemeldet bleiben“; Sperren, Löschen und Passwortwechsel beenden die Sessions des Benutzers sofort; Schutz vor Anfragen fremder Seiten ([ADR-0021](Architecture/Architecture-Decisions/0021-Sign-In-Page-and-Session-Cookie.md)). | M |
-| AUTH-10 | Anmeldung über OIDC (z. B. GitHub, Entra ID, Keycloak) mit Zuordnung zu bestehenden Benutzern. | L |
-| AUTH-11 | Anmeldung mit Passkeys (WebAuthn). | L |
+| AUTH-01 | The web UI has its own sign-in page with user name and password; a menu behind the user name holds account, admin and sign-out. Tools sign in to the API with HTTP Basic Auth or an API token; browsers never get the Basic Auth prompt. Passwords are accepted only over HTTPS (directly or behind a reverse proxy with `X-Forwarded-Proto`). | M |
+| AUTH-02 | Passwords are stored with PBKDF2 (SHA-256, at least 600,000 iterations, random salt). | M |
+| AUTH-03 | On the first start without users, an admin is created from `MDU_ASSETS_ADMIN_USER` and `MDU_ASSETS_ADMIN_PASSWORD`. If the variables are missing, the server stops with a clear error message. | M |
+| AUTH-04 | Admins create users with an initial password, lock and unlock them, reset passwords and grant the admin role. The last admin cannot be removed or locked. | M |
+| AUTH-05 | Users change their own password; an initial password must be changed at the first sign-in. | S |
+| AUTH-06 | Users create personal API tokens with a name, an expiry date (default 90 days, "never" selectable) and an optional restriction to one project and to read or write access. The token is shown only once and stored only as a hash. The list shows name, prefix, expiry and last use. | M |
+| AUTH-07 | Tokens are passed as `Authorization: Bearer <token>`. A token has at most the rights of its user. | M |
+| AUTH-08 | Failed sign-ins are limited per user and IP (rate limiting, see OPS-05). | M |
+| AUTH-09 | Session cookie (`HttpOnly`, `Secure`, `SameSite=Strict`), optionally "stay signed in"; locking, deleting and a password change end the user's sessions immediately; protection against requests from other sites ([ADR-0021](Architecture/Architecture-Decisions/0021-Sign-In-Page-and-Session-Cookie.md)). | M |
+| AUTH-10 | Sign-in through OIDC (for example GitHub, Entra ID, Keycloak), mapped to existing users. | L |
+| AUTH-11 | Sign-in with passkeys (WebAuthn). | L |
 
-### 5.2 Projekte und Mitglieder
+### 5.2 Projects and members
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| PRJ-01 | Admins und (falls vom Admin erlaubt) Benutzer legen Projekte mit Name, Kurzname (Slug) und Beschreibung an. Der Ersteller wird Owner. | M |
-| PRJ-02 | Die Projektübersicht zeigt jedem Benutzer seine Projekte mit Anzahl der Assets, belegtem Speicher und letzter Änderung; Admins sehen alle Projekte. | M |
-| PRJ-03 | Owner verwalten Mitglieder und ihre Rollen (Viewer, Editor, Owner). | M |
-| PRJ-04 | Ein Projekt kann umbenannt werden, ohne dass sich Asset-Links ändern. | M |
-| PRJ-05 | Ein Projekt wird erst gelöscht, wenn es leer ist oder der Owner das Löschen aller Assets ausdrücklich bestätigt; die Assets gehen dabei in den Papierkorb. | M |
+| PRJ-01 | Admins and (if the admin allows it) users create projects with name, short name (slug) and description. The creator becomes owner. | M |
+| PRJ-02 | The project overview shows each user their projects with the number of assets, used storage and last change; admins see all projects. | M |
+| PRJ-03 | Owners manage members and their roles (Viewer, Editor, Owner). | M |
+| PRJ-04 | A project can be renamed without changing asset links. | M |
+| PRJ-05 | A project is deleted only when it is empty or the owner explicitly confirms deleting all its assets; the assets then go to the trash. | M |
 
-### 5.3 Hochladen
+### 5.3 Uploading
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| UP-01 | Dateien lassen sich per Drag & Drop auf das gesamte Projektfenster hochladen. Beim Ziehen zeigt eine Ablagefläche das Zielprojekt und den Zielordner. | M |
-| UP-02 | Bilder aus der Zwischenablage lassen sich mit ++ctrl+v++ / ++cmd+v++ überall in der Projektansicht einfügen (Screenshot-Workflow). Eingefügte Bilder ohne Dateinamen erhalten einen Namen wie `screenshot-2026-11-13-1742.png`. | M |
-| UP-03 | Mehrere Dateien werden gleichzeitig hochgeladen, mit Fortschritt pro Datei. | M |
-| UP-04 | Vor oder direkt nach dem Upload kann man Dateiname und Alt-Text festlegen. Der Alt-Text wird aus dem Dateinamen vorgeschlagen (`app-settings.png` → „App settings“). | M |
-| UP-05 | Nach dem Upload erscheint das Asset sofort mit dem Markdown-Snippet und einer hervorgehobenen Kopieren-Schaltfläche. Wo der Browser es erlaubt, wird das Snippet direkt in die Zwischenablage kopiert; ein Hinweis bestätigt das. Bei mehreren Dateien gibt es „Alle Snippets kopieren“. | M |
-| UP-06 | Erlaubt sind nur png, jpg/jpeg, gif, webp, avif, bmp und svg. Der Typ wird am Dateiinhalt (Signatur) geprüft, nicht nur an der Endung. | M |
-| UP-07 | SVG-Dateien werden beim Upload bereinigt (keine Scripts, Event-Handler, externen Referenzen, `foreignObject`); die Bereinigung folgt der Allowlist des SVG-Lesers von MDU, ist aber ein eigener Sanitizer für vollständige Dateien ([ADR-0012](Architecture/Architecture-Decisions/0012-Own-SVG-Sanitizer.md)). | M |
-| UP-08 | Bei Pixelbildern werden EXIF-, GPS- und sonstige Metadaten entfernt; die Farbprofil-Information bleibt erhalten, die Ausrichtung wird vorher angewendet. | M |
-| UP-09 | Lädt jemand eine Datei hoch, deren Inhalt im Projekt schon existiert (SHA-256), weist die UI darauf hin und bietet den vorhandenen Link an. | S |
-| UP-10 | Uploads über Größenlimit oder Quote werden mit verständlicher Meldung abgelehnt, bevor die Datei vollständig übertragen ist (wenn `Content-Length` bekannt). | M |
-| UP-11 | Direkt nach dem Upload wählt der Server das Format mit dem besten Verhältnis von Größe und Qualität und liefert nur noch dieses aus: Fotos (JPEG) werden verlustbehaftetes WebP in hoher Qualität; PNG, BMP und unbewegtes GIF werden verlustfreies WebP, außer der Inhalt ist fotografisch (verlustfrei mehr als doppelt so groß wie verlustbehaftet), dann verlustbehaftet. Jeweils nur, wenn die Datei kleiner wird. Beim Upload und beim Ersetzen kann man „Lossless“ wählen (`?lossless=true`): dann geht keine Qualität verloren, JPEG bleibt unverändert. SVG, AVIF, WebP und Animationen bleiben, wie sie sind. Dateiname und Endung folgen dem gespeicherten Format. Gespeichert wird nur die umgewandelte Datei; Typ und Größe des Uploads werden angezeigt. Pro Projekt abschaltbar; bestehende Bilder bleiben unverändert ([ADR-0019](Architecture/Architecture-Decisions/0019-Format-Chosen-on-Upload.md)). | M |
+| UP-01 | Files can be uploaded by drag and drop onto the whole project window. While dragging, a drop zone shows the target project and folder. | M |
+| UP-02 | Images from the clipboard can be pasted with ++ctrl+v++ / ++cmd+v++ anywhere in the project view (screenshot workflow). Pasted images without a file name get a name like `screenshot-2026-11-13-1742.png`. | M |
+| UP-03 | Several files are uploaded at once, with progress per file. | M |
+| UP-04 | Before or right after the upload, the file name and alt text can be set. The alt text is suggested from the file name (`app-settings.png` → "App settings"). | M |
+| UP-05 | After the upload, the asset appears immediately with its Markdown snippet and a highlighted copy button. Where the browser allows it, the snippet is copied to the clipboard directly, and a notice confirms it. For several files there is "Copy all snippets". | M |
+| UP-06 | Only png, jpg/jpeg, gif, webp, avif, bmp and svg are allowed. The type is checked by the file content (signature), not only by the extension. | M |
+| UP-07 | SVG files are sanitized on upload (no scripts, event handlers, external references or `foreignObject`); the sanitizer follows the allowlist of MDU's SVG reader but is a separate sanitizer for complete files ([ADR-0012](Architecture/Architecture-Decisions/0012-Own-SVG-Sanitizer.md)). | M |
+| UP-08 | For raster images, EXIF, GPS and other metadata are removed; the color profile is kept and the orientation is applied first. | M |
+| UP-09 | When someone uploads a file whose content already exists in the project (SHA-256), the UI points this out and offers the existing link. | S |
+| UP-10 | Uploads above the size limit or quota are rejected with an understandable message before the file has been transferred completely (when `Content-Length` is known). | M |
+| UP-11 | Right after the upload, the server chooses the format with the best ratio of size and quality and serves only that format from then on: photos (JPEG) become lossy WebP in high quality; PNG, BMP and still GIF become lossless WebP, unless the content is photographic (lossless more than twice the size of lossy), then lossy. Each only if the file gets smaller. On upload and replacement, "Lossless" can be chosen (`?lossless=true`): then no quality is lost, and JPEG stays unchanged. SVG, AVIF, WebP and animations stay as they are. File name and extension follow the stored format. Only the converted file is stored; type and size of the upload are shown. Can be turned off per project; existing images stay unchanged ([ADR-0019](Architecture/Architecture-Decisions/0019-Format-Chosen-on-Upload.md)). | M |
 
-### 5.4 Links und Snippets
+### 5.4 Links and snippets
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| LNK-01 | Jedes Asset hat einen dauerhaften Link `/i/<asset-id>/<dateiname>`. Tags, Umbenennen von Projekten und neue Versionen ändern ihn nicht. | M |
-| LNK-02 | `/i/<asset-id>` und `/i/<asset-id>/<beliebiger-name>` liefern dieselbe Datei. Nach einer Umbenennung funktionieren alte Links weiter. | M |
-| LNK-03 | Asset-IDs sind mindestens 10 Zeichen Base62 aus einem kryptografischen Zufallsgenerator und nicht fortlaufend. | M |
-| LNK-04 | Die öffentliche Basis-URL ist konfigurierbar und darf ein anderer Host als die Verwaltungs-UI sein (empfohlen, z. B. `img.example.com` und `assets.example.com`), damit ausgelieferte Dateien keinen Zugriff auf UI-Cookies haben. | M |
-| LNK-05 | Snippet „Markdown“: `![<alt>](<link>)`. | M |
-| LNK-06 | Snippet „Hell/Dunkel“: Zwei Assets lassen sich als Paar verknüpfen; das Snippet enthält beide Zeilen mit `#only-light` und `#only-dark` und demselben Alt-Text. Beim Upload zweier Dateien mit Endungen wie `-light`/`-dark` schlägt die UI das Paar vor. | M |
-| LNK-07 | Schalter für MDU-Attribute, die ans Snippet angehängt werden: `{.image-frame}`, `{.image-zoom-on}`, `{.image-zoom-off}`, Bildunterschrift und Breite (`?w=`). Die zuletzt gewählten Schalter merkt sich die UI pro Benutzer. | M |
-| LNK-08 | Snippets „URL“ und „HTML“ (`<img src alt width height>`). | M |
-| LNK-09 | Die Rückwärtssuche nimmt eine Asset-URL (auch mit Größenparameter oder Fragment) entgegen und öffnet das Asset, sofern der Benutzer Zugriff hat. | M |
+| LNK-01 | Every asset has a permanent link `/i/<asset-id>/<file-name>`. Tags, renaming projects and new versions do not change it. | M |
+| LNK-02 | `/i/<asset-id>` and `/i/<asset-id>/<any-name>` return the same file. After a rename, old links keep working. | M |
+| LNK-03 | Asset IDs are at least 10 Base62 characters from a cryptographic random number generator and not sequential. | M |
+| LNK-04 | The public base URL is configurable and may be a different host than the management UI (recommended, for example `img.example.com` and `assets.example.com`), so that served files have no access to UI cookies. | M |
+| LNK-05 | Snippet "Markdown": `![<alt>](<link>)`. | M |
+| LNK-06 | Snippet "Light/dark": two assets can be linked as a pair; the snippet contains both lines with `#only-light` and `#only-dark` and the same alt text. When two files with suffixes such as `-light`/`-dark` are uploaded, the UI suggests the pair. | M |
+| LNK-07 | Switches for MDU attributes appended to the snippet: `{.image-frame}`, `{.image-zoom-on}`, `{.image-zoom-off}`, caption and width (`?w=`). The UI remembers the last chosen switches per user. | M |
+| LNK-08 | Snippets "URL" and "HTML" (`<img src alt width height>`). | M |
+| LNK-09 | The reverse lookup takes an asset URL (also with a size parameter or fragment) and opens the asset if the user has access. | M |
 
-### 5.5 Auslieferung und Bildverarbeitung
+### 5.5 Delivery and image processing
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| DLV-01 | Öffentliche Links liefern die aktuelle Version ohne Anmeldung, mit korrektem `Content-Type`, `ETag`, `Last-Modified` und Unterstützung für `If-None-Match`/`If-Modified-Since`. | M |
-| DLV-02 | Da sich der Inhalt hinter einem Link ändern kann, nutzen Links `Cache-Control: public, max-age=300, stale-while-revalidate=86400` (konfigurierbar). Zusätzlich gibt es versionsfeste Links `/i/<asset-id>/v<n>/<dateiname>` mit `immutable`. | M |
-| DLV-03 | `?w=<breite>` liefert eine proportional verkleinerte Fassung (nie vergrößert). Erlaubt sind nur konfigurierte Breiten (Standard: 320, 640, 800, 1024, 1280, 1600, 2048), damit Angreifer keinen unbegrenzten Cache erzeugen. Abgeleitete Fassungen werden auf der Platte zwischengespeichert. | M |
-| DLV-04 | Ein Link liefert immer das gespeicherte Format (UP-11), unabhängig vom `Accept`-Header; `?w=` verkleinert im selben Format. So passen Endung und `Content-Type` zusammen. Gleichzeitige Bildjobs sind begrenzt. | M |
-| DLV-05 | SVG wird mit `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` ausgeliefert; alle Antworten tragen `X-Content-Type-Options: nosniff`. | M |
-| DLV-06 | Vorschaubilder für die UI werden beim Upload erzeugt und über einen angemeldeten, nicht gezählten Endpunkt ausgeliefert. | M |
-| DLV-07 | Assets im Papierkorb liefern `410 Gone` (optional ein konfigurierbares Platzhalterbild); unbekannte IDs liefern `404`. | M |
-| DLV-08 | Die Auslieferung unterstützt `HEAD` und `Range`-Anfragen. | S |
+| DLV-01 | Public links return the current version without sign-in, with the correct `Content-Type`, `ETag`, `Last-Modified` and support for `If-None-Match`/`If-Modified-Since`. | M |
+| DLV-02 | Because the content behind a link can change, links use `Cache-Control: public, max-age=300, stale-while-revalidate=86400` (configurable). In addition there are version-pinned links `/i/<asset-id>/v<n>/<file-name>` with `immutable`. | M |
+| DLV-03 | `?w=<width>` returns a proportionally reduced variant (never enlarged). Only configured widths are allowed (default: 320, 640, 800, 1024, 1280, 1600, 2048), so attackers cannot create an unbounded cache. Derived variants are cached on disk. | M |
+| DLV-04 | A link always returns the stored format (UP-11), regardless of the `Accept` header; `?w=` resizes in the same format. That way extension and `Content-Type` match. Concurrent image jobs are limited. | M |
+| DLV-05 | SVG is served with `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox`; all responses carry `X-Content-Type-Options: nosniff`. | M |
+| DLV-06 | Thumbnails for the UI are created on upload and served through a signed-in endpoint that is not counted. | M |
+| DLV-07 | Assets in the trash return `410 Gone` (optionally a configurable placeholder image); unknown IDs return `404`. | M |
+| DLV-08 | Delivery supports `HEAD` and `Range` requests. | S |
 
-### 5.6 Ordnen, Suchen und Ansichten
+### 5.6 Organizing, searching and views
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| ORG-01 | *Entfallen:* verschachtelte Ordner. Tags ersetzen sie; beim Update werden der Ordner eines Bildes und alle darüber zu Tags ([ADR-0020](Architecture/Architecture-Decisions/0020-Tags-Instead-of-Folders.md)). | – |
-| ORG-02 | Die Seitenleiste zeigt die Tags des Projekts mit ihrer Anzahl; ein Klick filtert danach, mehrere Tags grenzen weiter ein. Bilder werden einzeln und als Mehrfachauswahl per Drag & Drop auf einen Tag oder über „Tags…“ getaggt. | M |
-| ORG-03 | Freie Tags pro Asset, mit Vorschlägen aus den im Projekt vorhandenen Tags. Mehrere Bilder lassen sich auf einmal taggen (Auswahl oder Ziehen auf einen Tag in der Seitenleiste); Tags lassen sich im ganzen Projekt umbenennen, zusammenführen und löschen. Uploads bekommen die Tags, nach denen gerade gefiltert wird. | M |
-| ORG-04 | Suche über Dateiname, Alt-Text, Beschreibung und Tags, schon während der Eingabe; Filter nach einem oder mehreren Tags (alle müssen zutreffen) oder „ohne Tags“, Dateityp, Upload-Zeitraum, Uploader und „nie abgerufen“ / „seit N Tagen nicht abgerufen“. | M |
-| ORG-05 | Projektansicht als Kachelraster (Vorschau, Name, Größe, Abrufe) und als Liste mit sortierbaren Spalten (Name, Größe, Abmessungen, Upload, letzter Abruf, Abrufe). | M |
-| ORG-06 | Detailansicht: große Vorschau (hell/dunkel Hintergrund umschaltbar, per Klick oder Tastatur im Bildbetrachter von MDU mit Zoom und Verschieben), alle Snippets, Metadaten (Typ, Abmessungen, Größe, Hash, Uploader, Datum), Versionen, Statistik, verweisende Seiten, Hell/Dunkel-Partner. | M |
-| ORG-07 | Tastaturbedienung: Pfeiltasten im Raster und in der Liste, auch ohne vorher ein Bild zu fokussieren und mit ++down++ aus dem Suchfeld, ++enter++ öffnet die Details, ++c++ kopiert das Markdown-Snippet des ausgewählten Assets, ++delete++ legt in den Papierkorb. | S |
+| ORG-01 | *Dropped:* nested folders. Tags replace them; on update, the folder of an image and all folders above it become tags ([ADR-0020](Architecture/Architecture-Decisions/0020-Tags-Instead-of-Folders.md)). | – |
+| ORG-02 | The sidebar shows the tags of the project with their counts; a click filters by a tag, and more tags narrow the filter further. Images are tagged one at a time or as a multiple selection, by drag and drop onto a tag or through "Tags…". | M |
+| ORG-03 | Free tags per asset, with suggestions from the tags that exist in the project. Several images can be tagged at once (selection or dragging onto a tag in the sidebar); tags can be renamed, merged and deleted across the whole project. Uploads get the tags currently filtered by. | M |
+| ORG-04 | Search across file name, alt text, description and tags, already while typing; filters by one or more tags (all must match) or "without tags", file type, upload period, uploader and "never requested" / "not requested for N days". | M |
+| ORG-05 | Project view as a tile grid (preview, name, size, requests) and as a list with sortable columns (name, size, dimensions, upload, last request, requests). | M |
+| ORG-06 | Detail view: large preview (light/dark background switchable, opens by click or keyboard in MDU's image viewer with zoom and panning), all snippets, metadata (type, dimensions, size, hash, uploader, date), versions, statistics, referring pages, light/dark partner. | M |
+| ORG-07 | Keyboard operation: arrow keys in the grid and the list, also without focusing an image first and with ++down++ from the search field, ++enter++ opens the details, ++c++ copies the Markdown snippet of the selected asset, ++delete++ moves it to the trash. | S |
 
-### 5.7 Versionen und Papierkorb
+### 5.7 Versions and trash
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| VER-01 | Editoren ersetzen ein Asset durch eine neue Datei (Drag & Drop auf die Detailansicht, Einfügen oder Dateiauswahl). Der Link bleibt, die Versionsnummer steigt. | M |
-| VER-02 | Ein Ersatz darf das Format wechseln (z. B. png → webp, auch durch UP-11). Der Dateiname bekommt dann die neue Endung; Links mit dem alten Namen funktionieren weiter, weil nur die ID zählt, und Versionslinks älterer Versionen behalten ihre Endung. Die UI zeigt einen Hinweis. | M |
-| VER-03 | Die Versionsliste zeigt Datum, Benutzer, Größe und Abmessungen; jede Version ist abrufbar und kann zur aktuellen gemacht werden (als neue Version). | M |
-| VER-04 | Alte Versionen zählen zur Quote. Owner können einzelne alte Versionen endgültig löschen. Optional: automatische Bereinigung nach N Versionen (Projekteinstellung). | S |
-| DEL-01 | Löschen legt Assets in den Papierkorb. Wurde das Asset in den letzten 30 Tagen abgerufen, warnt die UI vorher mit Anzahl und verweisenden Seiten. | M |
-| DEL-02 | Assets im Papierkorb sind 30 Tage (konfigurierbar) wiederherstellbar, mit demselben Link, und werden danach automatisch endgültig gelöscht. | M |
-| DEL-03 | Owner und Admins können den Papierkorb vorzeitig leeren; das endgültige Löschen erfordert eine Bestätigung. | M |
+| VER-01 | Editors replace an asset with a new file (drag and drop onto the detail view, paste or file picker). The link stays, the version number increases. | M |
+| VER-02 | A replacement may change the format (for example png → webp, also through UP-11). The file name then gets the new extension; links with the old name keep working because only the ID counts, and version links of older versions keep their extension. The UI shows a notice. | M |
+| VER-03 | The version list shows date, user, size and dimensions; every version can be retrieved and made current again (as a new version). | M |
+| VER-04 | Old versions count toward the quota. Owners can permanently delete individual old versions. Optional: automatic cleanup after N versions (project setting). | S |
+| DEL-01 | Deleting moves assets to the trash. If the asset was requested in the last 30 days, the UI warns first with the number of requests and the referring pages. | M |
+| DEL-02 | Assets in the trash can be restored for 30 days (configurable), with the same link, and are then permanently deleted automatically. | M |
+| DEL-03 | Owners and admins can empty the trash early; permanent deletion requires a confirmation. | M |
 
-### 5.8 Abrufstatistik
+### 5.8 Request statistics
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| STA-01 | Pro Asset werden die Gesamtzahl der Abrufe und der Zeitpunkt des letzten Abrufs gespeichert. | M |
-| STA-02 | Gezählt werden erfolgreiche öffentliche `GET`-Antworten (200 und 304), unabhängig von Größenparameter oder Format. `HEAD`, Vorschaubilder der UI und Abrufe angemeldeter UI-Sitzungen werden nicht gezählt. | M |
-| STA-03 | Bekannte Bots und Crawler (User-Agent-Liste, konfigurierbar) werden nicht gezählt. | M |
-| STA-04 | Verweisende Seiten: Aus dem `Referer` werden Origin und Pfad (ohne Query und Fragment) mit Anzahl und letztem Zeitpunkt gespeichert, höchstens 100 Einträge pro Asset (die ältesten fallen heraus). | M |
-| STA-05 | Zähler werden im Speicher gesammelt und gebündelt (z. B. alle 10 s) in SQLite geschrieben, damit Abrufe nicht auf Datenbankschreibzugriffe warten. | M |
-| STA-06 | Es werden keine IP-Adressen oder User-Agents pro Abruf dauerhaft gespeichert. | M |
+| STA-01 | For each asset, the total number of requests and the time of the last request are stored. | M |
+| STA-02 | Successful public `GET` responses (200 and 304) are counted, regardless of size parameter or format. `HEAD`, UI thumbnails and requests from signed-in UI sessions are not counted. | M |
+| STA-03 | Known bots and crawlers (user agent list, configurable) are not counted. | M |
+| STA-04 | Referring pages: from the `Referer`, origin and path (without query and fragment) are stored with a count and the last time, at most 100 entries per asset (the oldest drop out). | M |
+| STA-05 | Counters are collected in memory and written to SQLite in batches (for example every 10 s), so requests do not wait for database writes. | M |
+| STA-06 | No IP addresses or user agents per request are stored permanently. | M |
 
-**Bekannte Grenzen** (in der UI erklärt): Browser- und CDN-Caches verringern die Zahl der Abrufe, die den Server erreichen. Browser senden bei Abrufen von fremden Sites standardmäßig nur den Origin als Referer (`strict-origin-when-cross-origin`); verweisende Seiten sind daher meist nur Sites, nicht einzelne Seiten. Siehe offene Frage Q-03.
+**Known limits** (explained in the UI): browser and CDN caches reduce the number of requests that reach the server. By default, browsers send only the origin as the referrer for requests from other sites (`strict-origin-when-cross-origin`); referring pages are therefore mostly sites, not individual pages. See open question Q-03.
 
 ### 5.9 API
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| API-01 | JSON-API unter `/api/v1`, angemeldet über die Session der Web-UI, Basic Auth oder API-Token. Jede UI-Funktion ist über die API verfügbar; die UI nutzt ausschließlich diese API. | M |
-| API-02 | Die API wird als OpenAPI-Dokument unter `/api/v1/openapi.json` beschrieben, das sich mit MDU als API-Referenz rendern lässt. | M |
-| API-03 | Fehler werden einheitlich als `application/problem+json` (RFC 9457) gemeldet. | M |
-| API-04 | Der Upload-Endpunkt akzeptiert `multipart/form-data` und den Rohinhalt im Body (`Content-Type: image/png`, Dateiname per `?name=`), damit auch einfache Tools wie `curl --data-binary` oder ShareX funktionieren. | M |
-| API-05 | Die Upload-Antwort enthält mindestens `id`, `url`, `versionUrl`, `markdown`, `html`, `width`, `height`, `size`, `contentType`. | M |
-| API-06 | Ein öffentlicher, nicht angemeldeter Prüf-Endpunkt beantwortet für eine Liste von Asset-URLs, ob sie existieren, im Papierkorb liegen oder unbekannt sind (für `mdu lint`). Er verrät keine Metadaten außer dem Status. | M |
-| API-07 | Die UI bietet unter „Integrations“ eine fertige ShareX-Konfiguration (`.sxcu`) und ein `curl`-Beispiel für das gewählte Projekt und Token zum Download an. | S |
+| API-01 | JSON API under `/api/v1`, signed in through the web UI session, Basic Auth or an API token. Every UI function is available through the API; the UI uses this API exclusively. | M |
+| API-02 | The API is described as an OpenAPI document at `/api/v1/openapi.json` that MDU can render as an API reference. | M |
+| API-03 | Errors are reported uniformly as `application/problem+json` (RFC 9457). | M |
+| API-04 | The upload endpoint accepts `multipart/form-data` and the raw content in the body (`Content-Type: image/png`, file name through `?name=`), so simple tools such as `curl --data-binary` or ShareX work too. | M |
+| API-05 | The upload response contains at least `id`, `url`, `versionUrl`, `markdown`, `html`, `width`, `height`, `size`, `contentType`. | M |
+| API-06 | A public endpoint without sign-in answers for a list of asset URLs whether they exist, are in the trash or are unknown (for `mdu lint`). It reveals no metadata besides the status. | M |
+| API-07 | Under "Integrations", the UI offers a ready-made ShareX configuration (`.sxcu`) and a `curl` example for the chosen project and token for download. | S |
 
-Skizze der Endpunkte:
+Endpoint sketch:
 
-| Methode und Pfad | Zweck |
+| Method and path | Purpose |
 | --- | --- |
-| `POST /api/v1/projects/{project}/assets` | Hochladen (optional `alt`, `tag`, wiederholbar) |
-| `GET /api/v1/projects/{project}/assets` | Liste mit Suche, Filter, Sortierung, Seitenweise |
-| `GET /api/v1/assets/{id}` | Metadaten, Snippets, Statistik-Kurzform |
-| `PATCH /api/v1/assets/{id}` | Name, Alt-Text, Beschreibung, Tags, Hell/Dunkel-Partner |
-| `PUT /api/v1/assets/{id}/content` | Neue Version hochladen |
-| `GET /api/v1/assets/{id}/versions` · `POST …/versions/{n}/restore` | Versionen |
-| `GET /api/v1/assets/{id}/stats` | Zähler, letzter Abruf, verweisende Seiten |
-| `DELETE /api/v1/assets/{id}` · `POST /api/v1/assets/{id}/restore` | Papierkorb |
-| `POST /api/v1/assets/lookup` | Rückwärtssuche (angemeldet) |
-| `POST /api/v1/public/check` | Existenzprüfung für Lint (öffentlich) |
-| `…/projects`, `…/projects/{project}/tags`, `…/projects/{project}/assets/tags`, `…/projects/{project}/members` | Projekte, Tags, Mitglieder |
-| `…/me`, `…/me/tokens` | Eigenes Profil und Tokens |
-| `…/admin/users`, `…/admin/audit`, `…/admin/settings` | Verwaltung |
-| `GET /api/v1/projects/{project}/export` · `POST /api/v1/projects/import` | Export/Import |
+| `POST /api/v1/projects/{project}/assets` | Upload (optional `alt`, `tag`, repeatable) |
+| `GET /api/v1/projects/{project}/assets` | List with search, filters, sorting, paging |
+| `GET /api/v1/assets/{id}` | Metadata, snippets, short statistics |
+| `PATCH /api/v1/assets/{id}` | Name, alt text, description, tags, light/dark partner |
+| `PUT /api/v1/assets/{id}/content` | Upload a new version |
+| `GET /api/v1/assets/{id}/versions` · `POST …/versions/{n}/restore` | Versions |
+| `GET /api/v1/assets/{id}/stats` | Counter, last request, referring pages |
+| `DELETE /api/v1/assets/{id}` · `POST /api/v1/assets/{id}/restore` | Trash |
+| `POST /api/v1/assets/lookup` | Reverse lookup (signed in) |
+| `POST /api/v1/public/check` | Existence check for lint (public) |
+| `…/projects`, `…/projects/{project}/tags`, `…/projects/{project}/assets/tags`, `…/projects/{project}/members` | Projects, tags, members |
+| `…/me`, `…/me/tokens` | Own profile and tokens |
+| `…/admin/users`, `…/admin/audit`, `…/admin/settings` | Administration |
+| `GET /api/v1/projects/{project}/export` · `POST /api/v1/projects/import` | Export/import |
 
-### 5.10 Anbindung an das mdu-CLI
+### 5.10 Integration with the mdu CLI
 
-Diese Anforderungen betreffen das Repository `capjan/mdu`.
+These requirements concern the `capjan/mdu` repository.
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| CLI-01 | `mdu.yml` erhält einen Abschnitt `assets` mit `server` (Basis-URL der API), `public` (öffentliche Basis-URL, falls abweichend) und `project` (Standardprojekt). Das Token kommt aus der Umgebungsvariable `MDU_ASSETS_TOKEN`, nie aus `mdu.yml`. | M |
-| CLI-02 | `mdu assets upload <datei>… [--project] [--tag] [--alt] [--format markdown\|url\|html]` lädt Dateien hoch und gibt pro Datei das Snippet als Klartext aus, damit es sich pipen lässt. Bei `-` liest der Befehl von stdin. | M |
-| CLI-03 | `mdu lint` meldet Bild- und Linkziele auf dem konfigurierten Asset-Server, die unbekannt sind oder im Papierkorb liegen, als neue Regel `MDU032`. Die Prüfung nutzt den gebündelten Prüf-Endpunkt (API-06), läuft nur, wenn `assets.server` konfiguriert ist, und meldet Netzwerkfehler als Warnung, nicht als Fehler. Mit `--offline` wird sie übersprungen. | M |
-| CLI-04 | Die CLI-Ausgabe bleibt Klartext und abhängigkeitsarm; der HTTP-Zugriff nutzt `HttpClient` ohne zusätzliche Pakete. | M |
+| CLI-01 | `mdu.yml` gets an `assets` section with `server` (base URL of the API), `public` (public base URL, if different) and `project` (default project). The token comes from the environment variable `MDU_ASSETS_TOKEN`, never from `mdu.yml`. | M |
+| CLI-02 | `mdu assets upload <file>… [--project] [--tag] [--alt] [--format markdown\|url\|html]` uploads files and prints the snippet for each file as plain text, so it can be piped. With `-`, the command reads from stdin. | M |
+| CLI-03 | `mdu lint` reports image and link targets on the configured asset server that are unknown or in the trash, as the new rule `MDU032`. The check uses the batched check endpoint (API-06), runs only when `assets.server` is configured, and reports network errors as warnings, not errors. `--offline` skips it. | M |
+| CLI-04 | The CLI output stays plain text and dependency-light; HTTP access uses `HttpClient` without additional packages. | M |
 
-### 5.11 Verwaltung, Limits und Protokoll
+### 5.11 Administration, limits and logging
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| OPS-01 | Max. Dateigröße pro Upload: global (Standard 50 MB) und pro Projekt niedriger einstellbar. Max. Pixelzahl (Standard 50 MP) gegen Dekompressionsbomben. | M |
-| OPS-02 | Speicherquote pro Projekt (aktuelle Versionen + alte Versionen + Papierkorb), vom Admin festgelegt; die UI zeigt Belegung und warnt ab 90 %. Zwischengespeicherte Größen-/Formatfassungen zählen nicht. | M |
-| OPS-03 | Audit-Log für Anmeldungen (erfolgreich/fehlgeschlagen), Uploads, neue Versionen, Verschieben, Umbenennen, Metadatenänderungen, Löschen, Wiederherstellen, Mitglieder-, Token- und Benutzeränderungen. Admins sehen alles, Owner das Log ihres Projekts. Aufbewahrung konfigurierbar (Standard 365 Tage). | M |
-| OPS-04 | Admin-Übersicht: Benutzer, Projekte mit Belegung, Gesamtspeicher, Papierkorb, Einstellungen. | M |
-| OPS-05 | Rate Limiting (ASP.NET-Core-Middleware) für Anmeldungen, Uploads, den öffentlichen Prüf-Endpunkt und 404-Antworten auf `/i/` pro IP. | M |
-| OPS-06 | Export eines Projekts als Zip (aktuelle Dateien, optional alle Versionen, Metadaten als JSON); Import in eine andere Instanz behält Asset-IDs bei, sofern sie frei sind. | M |
-| OPS-07 | Health-Endpunkt `/healthz` und strukturierte Logs auf stdout. | M |
+| OPS-01 | Max. file size per upload: global (default 50 MB) and lower per project if set. Max. pixel count (default 50 MP) against decompression bombs. | M |
+| OPS-02 | Storage quota per project (current versions + old versions + trash), set by the admin; the UI shows the usage and warns from 90 %. Cached size and format variants do not count. | M |
+| OPS-03 | Audit log for sign-ins (successful/failed), uploads, new versions, moves, renames, metadata changes, deletions, restores, and member, token and user changes. Admins see everything, owners the log of their project. Retention configurable (default 365 days). | M |
+| OPS-04 | Admin overview: users, projects with usage, total storage, trash, settings. | M |
+| OPS-05 | Rate limiting (ASP.NET Core middleware) per IP for sign-ins, uploads, the public check endpoint and 404 responses under `/i/`. | M |
+| OPS-06 | Export of a project as a zip (current files, optionally all versions, metadata as JSON); importing into another instance keeps the asset IDs if they are free. | M |
+| OPS-07 | Health endpoint `/healthz` and structured logs on stdout. | M |
 
-### 5.12 Oberfläche und Design
+### 5.12 Interface and design
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| UI-01 | Die UI nutzt die Tokens aus `tokens.css` des MDU-Design-Systems unverändert (Farben, Typografie, Abstände, Radien, Schatten) und baut Komponenten nach dessen Vorgaben: Kopfzeile, Seitenleiste mit Baum, Steuerelemente, Karten/Kacheln wie im Dashboard, Callouts für Hinweise. | M |
-| UI-02 | Hell-, Dunkel- und Automatikmodus wie bei MDU, mit demselben Umschalter. | M |
-| UI-03 | Tastaturfokus wie bei MDU: nur `:focus-visible`, `outline: 2px solid var(--link); outline-offset: 3px`, Rundungen und Inset-Ring nach den MDU-Regeln. | M |
-| UI-04 | Barrierefreiheit nach dem Kapitel „Barrierefreiheit“ des Design-Systems: Kontrast, reduzierte Bewegung, vollständige Tastaturbedienung, Live-Region für Upload-Status und Kopierbestätigung. | M |
-| UI-05 | Responsives Layout ab 360 px Breite; Hochladen über Dateiauswahl auch auf Mobilgeräten. | S |
-| UI-06 | Alle UI-Dateien sind in die Anwendung eingebettet; keine CDNs, keine externen Schriften. | M |
-| UI-07 | Ein Test im Repository prüft, dass `tokens.css` mit der Version im Design-System übereinstimmt (z. B. über einen Hash in einer Pin-Datei), und ein Werkzeug aktualisiert die Kopie. | M |
+| UI-01 | The UI uses the tokens from `tokens.css` of the MDU design system unchanged (colors, typography, spacing, radii, shadows) and builds components to its guidelines: header, sidebar with tree, controls, cards/tiles as in the dashboard, callouts for notices. | M |
+| UI-02 | Light, dark and automatic mode as in MDU, with the same switch. | M |
+| UI-03 | Keyboard focus as in MDU: only `:focus-visible`, `outline: 2px solid var(--link); outline-offset: 3px`, rounding and inset ring following the MDU rules. | M |
+| UI-04 | Accessibility following the "Accessibility" chapter of the design system: contrast, reduced motion, full keyboard operation, live region for upload status and copy confirmation. | M |
+| UI-05 | Responsive layout from 360 px width; uploading through the file picker on mobile devices too. | S |
+| UI-06 | All UI files are embedded in the application; no CDNs, no external fonts. | M |
+| UI-07 | A test in the repository checks that `tokens.css` matches the version in the design system (for example through a hash in a pin file), and a tool updates the copy. | M |
 
-Seiten: Anmeldung (später), Projekte, Projekt (Baum + Raster/Liste + Upload-Fläche), Asset-Details, Papierkorb, Projekteinstellungen (Mitglieder, Limits, Formatkonvertierung), Profil (Passwort, Tokens, Integrationen), Admin (Benutzer, Projekte, Audit-Log, Einstellungen).
+Pages: sign-in (later), projects, project (tree + grid/list + upload area), asset details, trash, project settings (members, limits, format conversion), profile (password, tokens, integrations), admin (users, projects, audit log, settings).
 
-## 6. Nichtfunktionale Anforderungen
+## 6. Non-functional requirements
 
-| ID | Anforderung |
+| ID | Requirement |
 | --- | --- |
-| NF-01 | .NET 10, ASP.NET Core Minimal APIs mit Request Delegate Generator, `PublishAot=true`, ohne Trim- oder AOT-Warnungen. Keine Razor Pages, kein MVC, kein reflektionsbasiertes JSON (System.Text.Json Source Generator). |
-| NF-02 | Datenzugriff mit `Microsoft.Data.Sqlite` und handgeschriebenem SQL (kein EF Core), Schema-Migrationen versioniert im Code. SQLite im WAL-Modus. |
-| NF-03 | Bildverarbeitung mit NetVips/libvips (NetVips 3.2.0, NetVips.Native 8.18.7 oder neuer). Der [AOT-Spike](Architecture/NetVips-AOT-Spike.md) hat die Tauglichkeit unter Native AOT bestätigt (siehe R-01). |
-| NF-04 | Nur .NET als Build-, Test- und Generatorwerkzeug, kein Node/npm und kein Python – wie im MDU-Repository. Tests mit xUnit. |
-| NF-05 | Dateien werden unter einem inhaltsadressierten Pfad abgelegt (`blobs/ab/cd/<sha256>`), Metadaten verweisen darauf. Schreiben erfolgt atomar (temporäre Datei + Umbenennen). |
-| NF-06 | Backup: Ein Kopieren des Datenverzeichnisses nach `sqlite3 .backup` bzw. einem eingebauten Befehl `mdu-assets backup <ziel>` ergibt eine konsistente Sicherung. |
-| NF-07 | Leistung: Ausgelieferte Originale und zwischengespeicherte Fassungen mit p95 < 20 ms (ohne Netzwerk) auf einem kleinen VPS; Kaltstart < 200 ms; Leerlauf-Speicher < 80 MB. |
-| NF-08 | Konfiguration über `appsettings.json` und Umgebungsvariablen (`MDU_ASSETS_…`), u. a. Datenverzeichnis, öffentliche URL, UI-URL, Limits, vertrauenswürdige Proxies. |
-| NF-09 | Datenschutz: keine Cookies auf öffentlichen Links, keine Speicherung personenbezogener Abrufdaten (STA-06), Metadaten aus Bildern entfernt (UP-08). |
-| NF-10 | Repository-Konventionen wie bei MDU: Conventional Commits, git-cliff für Versionen und Changelog, Release-Workflow von `main`. |
+| NF-01 | .NET 10, ASP.NET Core minimal APIs with the Request Delegate Generator, `PublishAot=true`, without trim or AOT warnings. No Razor Pages, no MVC, no reflection-based JSON (System.Text.Json source generator). |
+| NF-02 | Data access with `Microsoft.Data.Sqlite` and handwritten SQL (no EF Core), schema migrations versioned in code. SQLite in WAL mode. |
+| NF-03 | Image processing with NetVips/libvips (NetVips 3.2.0, NetVips.Native 8.18.7 or newer). The [AOT spike](Architecture/NetVips-AOT-Spike.md) confirmed that it works under Native AOT (see R-01). |
+| NF-04 | Only .NET as build, test and generator tooling, no Node/npm and no Python – as in the MDU repository. Tests with xUnit. |
+| NF-05 | Files are stored under a content-addressed path (`blobs/ab/cd/<sha256>`), and metadata refers to it. Writes are atomic (temporary file + rename). |
+| NF-06 | Backup: copying the data directory after `sqlite3 .backup` or a built-in command `mdu-assets backup <target>` produces a consistent backup. |
+| NF-07 | Performance: served originals and cached variants with p95 < 20 ms (without network) on a small VPS; cold start < 200 ms; idle memory < 80 MB. |
+| NF-08 | Configuration through `appsettings.json` and environment variables (`MDU_ASSETS_…`), among them data directory, public URL, UI URL, limits and trusted proxies. |
+| NF-09 | Privacy: no cookies on public links, no storage of personal request data (STA-06), metadata removed from images (UP-08). |
+| NF-10 | Repository conventions as in MDU: Conventional Commits, git-cliff for versions and changelog, release workflow from `main`. |
 
-## 7. Betrieb und Auslieferung
+## 7. Operations and delivery
 
-| ID | Anforderung | Prio |
+| ID | Requirement | Prio |
 | --- | --- | :-: |
-| DEP-01 | Eigenes Repository `mdu-assets` (lokal `/Volumes/SSK/Code/mdu-assets`). | M |
-| DEP-02 | Multi-Arch-Docker-Image `capjan/mdu-assets` (linux/amd64, linux/arm64) mit libvips, als Nicht-Root-Benutzer, ein Volume `/data`. | M |
-| DEP-03 | Native Binaries für linux-x64, linux-arm64 und osx-arm64 als Release-Assets (Windows ist derzeit kein Ziel); libvips (17–18 MB) liegt als native Bibliothek daneben (Archiv statt Einzeldatei), zusammen mit den Lizenztexten. Auf macOS werden Programm und `libvips.42.dylib` signiert und notarisiert wie bei MDU. | M |
-| DEP-04 | Beispielkonfiguration für den Betrieb hinter einem Reverse Proxy (Caddy oder nginx) mit getrennten Hosts für UI und öffentliche Links. | S |
+| DEP-01 | Own repository `mdu-assets` (locally `/Volumes/SSK/Code/mdu-assets`). | M |
+| DEP-02 | Multi-architecture Docker image `capjan/mdu-assets` (linux/amd64, linux/arm64) with libvips, running as a non-root user, one volume `/data`. | M |
+| DEP-03 | Native binaries for linux-x64, linux-arm64 and osx-arm64 as release assets (Windows is currently not a target); libvips (17–18 MB) ships next to the program as a native library (archive instead of a single file), together with the license texts. On macOS, the program and `libvips.42.dylib` are signed and notarized as in MDU. | M |
+| DEP-04 | Example configuration for running behind a reverse proxy (Caddy or nginx) with separate hosts for the UI and public links. | S |
 
-## 8. Datenmodell (Skizze)
+## 8. Data model (sketch)
 
 ```text
 User(id, name, display_name, password_hash, is_admin, is_locked, must_change_password, created_at)
@@ -288,46 +288,46 @@ AssetReferrer(asset_id, origin, path, hit_count, last_hit_at)
 AuditEntry(id, at, user_id?, project_id?, action, target, details_json, ip)
 ```
 
-## 9. Akzeptanzkriterien der Kernabläufe
+## 9. Acceptance criteria for the core workflows
 
-1. **Screenshot einfügen:** Angemeldet in einem Projekt einen Screenshot mit ++cmd+v++ einfügen → innerhalb von 2 s steht ein Markdown-Snippet mit Link der Form `/i/<id>/screenshot-….png` bereit und lässt sich mit einem Klick oder ++c++ kopieren. Der Link zeigt das Bild in einer neuen, nicht angemeldeten Browsersitzung.
-2. **Neu ordnen:** Dem Asset andere Tags geben und einen Tag umbenennen → der kopierte Link liefert weiterhin dasselbe Bild.
-3. **Ersetzen:** Eine neue Datei auf die Detailansicht ziehen → der Link zeigt nach Ablauf der Cache-Zeit das neue Bild, Version 1 bleibt unter `/v1/` abrufbar und lässt sich wiederherstellen.
-4. **Zusammenarbeit:** Ein Owner fügt einen zweiten Benutzer als Editor hinzu → dieser sieht das Projekt, kann hochladen, aber keine Mitglieder verwalten; ein Viewer sieht keine Upload-Fläche und erhält bei API-Uploads `403`.
-5. **Admin:** Ein Admin sieht alle Projekte, auch ohne Mitgliedschaft, und kann Benutzer anlegen und sperren; ein gesperrter Benutzer und seine Tokens werden sofort abgewiesen.
-6. **API:** `curl -H "Authorization: Bearer …" --data-binary @bild.png -H "Content-Type: image/png" "…/api/v1/projects/docs/assets?name=bild.png"` liefert `201` mit `url` und `markdown`; `GET /api/v1/assets/{id}` liefert Metadaten und Statistik.
-7. **Statistik:** Drei Abrufe aus einem normalen Browser erhöhen den Zähler um 3 (bzw. um die Zahl der nicht aus dem Cache bedienten Anfragen) und setzen den letzten Abruf; Abrufe mit Googlebot-User-Agent und Ansichten in der UI ändern den Zähler nicht.
-8. **mdu:** `mdu assets upload bild.png` gibt eine Markdown-Zeile aus; nach dem Löschen des Assets meldet `mdu lint` den Link als `MDU032`.
-9. **Design:** Hell- und Dunkelmodus entsprechen den Tokens des Design-Systems; ein Tab-Durchlauf durch Kopfzeile, Baum, Raster und Detailansicht zeigt überall den MDU-Fokusring.
+1. **Paste a screenshot:** signed in to a project, paste a screenshot with ++cmd+v++ → within 2 s a Markdown snippet with a link of the form `/i/<id>/screenshot-….png` is ready and can be copied with one click or ++c++. The link shows the image in a new browser session that is not signed in.
+2. **Reorganize:** give the asset other tags and rename a tag → the copied link still returns the same image.
+3. **Replace:** drag a new file onto the detail view → after the cache time the link shows the new image; version 1 stays available under `/v1/` and can be restored.
+4. **Collaboration:** an owner adds a second user as editor → that user sees the project and can upload but cannot manage members; a viewer sees no upload area and gets `403` for API uploads.
+5. **Admin:** an admin sees all projects, even without membership, and can create and lock users; a locked user and their tokens are rejected immediately.
+6. **API:** `curl -H "Authorization: Bearer …" --data-binary @image.png -H "Content-Type: image/png" "…/api/v1/projects/docs/assets?name=image.png"` returns `201` with `url` and `markdown`; `GET /api/v1/assets/{id}` returns metadata and statistics.
+7. **Statistics:** three requests from a normal browser increase the counter by 3 (or by the number of requests not served from the cache) and set the last request; requests with a Googlebot user agent and views in the UI do not change the counter.
+8. **mdu:** `mdu assets upload image.png` prints a Markdown line; after the asset is deleted, `mdu lint` reports the link as `MDU032`.
+9. **Design:** light and dark mode match the tokens of the design system; tabbing through the header, tree, grid and detail view shows the MDU focus ring everywhere.
 
-## 10. Ausbaustufen
+## 10. Stages
 
-| Stufe | Inhalt |
+| Stage | Content |
 | --- | --- |
-| 1 (erste Version) | Alle Anforderungen mit Priorität M und S |
-| 2 | Login-Formular mit Session (AUTH-09), Passkeys (AUTH-11) |
+| 1 (first version) | All requirements with priority M and S |
+| 2 | Sign-in form with session (AUTH-09), passkeys (AUTH-11) |
 | 3 | OIDC/SSO (AUTH-10) |
-| Ideen, nicht entschieden | Einladungslinks; S3-kompatibler Speicher; Paste-to-Asset im Editor von `mdu serve`; Befehl, der Asset-Links in lokale Dateien übernimmt (Offline/PDF) oder lokale Bilder hochlädt und Links ersetzt; Bildbearbeitung in der UI (Zuschneiden, Markierungen, Unkenntlichmachen); Abrufverlauf pro Tag als Diagramm; Webhooks bei Uploads; weitere Dateitypen (PDF, Video) |
+| Ideas, not decided | Invitation links; S3-compatible storage; paste-to-asset in the `mdu serve` editor; a command that copies asset links into local files (offline/PDF) or uploads local images and replaces the links; image editing in the UI (cropping, annotations, redaction); request history per day as a chart; webhooks on uploads; more file types (PDF, video) |
 
-## 11. Risiken
+## 11. Risks
 
-| ID | Risiko | Umgang |
+| ID | Risk | Handling |
 | --- | --- | --- |
-| R-01 | NetVips unter Native AOT und AVIF-Kodierung im mitgelieferten libvips. | **Durch [Spike](Architecture/NetVips-AOT-Spike.md) entschärft:** 0 AOT-Warnungen, alle Prüfungen bestanden auf osx-arm64 und Linux. Hinweis: Multi-Arch-Builds nicht unter Emulation, sondern nativ oder per Cross-Compile. |
-| R-02 | Native Binaries sind wegen libvips keine Einzeldatei. | Bestätigt. Release als Archiv; Docker (chiselled `runtime-deps` reicht) als empfohlener Weg. |
-| R-07 | AVIF-Kodierung ist langsam (≈ 1 s für 1600×900) und speicherhungrig. | Der Server erzeugt kein AVIF mehr, sondern WebP beim Upload (≈ 0,2 s, UP-11); begrenzte Parallelität, libvips-Cache begrenzt. |
-| R-03 | Öffentliche Bilder mit nicht erratbaren IDs sind keine Zugriffskontrolle; einmal geteilte Links lassen sich nicht zurückholen. | In UI und Doku klar benennen; Löschen liefert sofort 410. |
-| R-04 | SVG-Uploads sind ein XSS-Vektor. | Bereinigung (UP-07), CSP mit `sandbox` (DLV-05), getrennter Host (LNK-04). |
-| R-05 | Abrufzahlen sind durch Caches und CDNs systematisch zu niedrig. | Kurze `max-age` (DLV-02), Grenze in der UI erklären. |
-| R-06 | Basic Auth erlaubt kein sauberes Abmelden im Browser. | Erledigt: Anmeldeseite mit Session ([ADR-0021](Architecture/Architecture-Decisions/0021-Sign-In-Page-and-Session-Cookie.md)). |
+| R-01 | NetVips under Native AOT and AVIF encoding in the bundled libvips. | **Mitigated by the [spike](Architecture/NetVips-AOT-Spike.md):** 0 AOT warnings, all checks passed on osx-arm64 and Linux. Note: build multi-architecture images natively or by cross-compiling, not under emulation. |
+| R-02 | Native binaries are not a single file because of libvips. | Confirmed. Release as an archive; Docker (chiseled `runtime-deps` is enough) as the recommended way. |
+| R-07 | AVIF encoding is slow (≈ 1 s for 1600×900) and memory-hungry. | The server no longer creates AVIF but WebP on upload (≈ 0.2 s, UP-11); limited concurrency, libvips cache limited. |
+| R-03 | Public images with unguessable IDs are no access control; links once shared cannot be taken back. | State this clearly in the UI and documentation; deleting returns 410 immediately. |
+| R-04 | SVG uploads are an XSS vector. | Sanitizing (UP-07), CSP with `sandbox` (DLV-05), separate host (LNK-04). |
+| R-05 | Request counts are systematically too low because of caches and CDNs. | Short `max-age` (DLV-02), explain the limit in the UI. |
+| R-06 | Basic Auth does not allow a clean sign-out in the browser. | Done: sign-in page with a session ([ADR-0021](Architecture/Architecture-Decisions/0021-Sign-In-Page-and-Session-Cookie.md)). |
 
-## 12. Offene Fragen
+## 12. Open questions
 
-| ID | Frage |
+| ID | Question |
 | --- | --- |
-| Q-01 | Dürfen normale Benutzer selbst Projekte anlegen, oder nur Admins? (PRJ-01 sieht eine Admin-Einstellung vor.) **Entschieden:** Admins immer, andere Benutzer nur mit der Admin-Einstellung, die anfangs aus ist ([ADR-0014](Architecture/Architecture-Decisions/0014-Project-Creation-by-Admin-Setting.md)). |
-| Q-02 | Soll eine mit Größenparameter oder Format konvertierte Fassung beim Ersetzen sofort verworfen werden (ja, vorgesehen) – und soll der Server bei CDN-Betrieb einen Purge-Hook anbieten? **Entschieden:** Fassungen bleiben für die versionsfesten Links, kein Purge-Hook ([ADR-0016](Architecture/Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md)). |
-| Q-03 | Soll MDU beim Rendern für Bilder vom Asset-Server `referrerpolicy="no-referrer-when-downgrade"` setzen, damit der Server einzelne Seiten statt nur Sites sieht? Das ist eine Datenschutzabwägung für Leser. **Entschieden:** nein, MDU behält die Voreinstellung der Browser ([ADR-0017](Architecture/Architecture-Decisions/0017-Referrer-Policy-for-MDU-Pages.md)). |
-| Q-04 | Wie viele Versionen pro Asset sollen standardmäßig aufbewahrt werden (unbegrenzt vs. z. B. 20)? **Entschieden:** unbegrenzt, Owner können pro Projekt eine Grenze setzen ([ADR-0016](Architecture/Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md)). |
-| Q-05 | Sollen Asset-IDs bei einem Import in eine andere Instanz kollidieren dürfen (dann neue IDs und Mapping-Datei) oder schlägt der Import fehl? **Entschieden:** neue IDs für belegte, Zuordnung in der Antwort ([ADR-0018](Architecture/Architecture-Decisions/0018-Import-Id-Collisions.md)). |
-| Q-06 | ~~Welcher Hostname ist vorgesehen?~~ Geklärt: Die Hostnamen für Oberfläche und öffentliche Links sind Konfiguration pro Installation (LNK-04, NF-08), es gibt keinen festen Hostnamen. |
+| Q-01 | May regular users create projects themselves, or only admins? (PRJ-01 provides an admin setting.) **Decided:** admins always, other users only with the admin setting, which is off at first ([ADR-0014](Architecture/Architecture-Decisions/0014-Project-Creation-by-Admin-Setting.md)). |
+| Q-02 | Should a variant converted by size parameter or format be discarded immediately on replacement (yes, planned) – and should the server offer a purge hook when running behind a CDN? **Decided:** variants stay for the version-pinned links, no purge hook ([ADR-0016](Architecture/Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md)). |
+| Q-03 | Should MDU set `referrerpolicy="no-referrer-when-downgrade"` on images from the asset server when rendering, so the server sees individual pages instead of only sites? This is a privacy trade-off for readers. **Decided:** no, MDU keeps the browser default ([ADR-0017](Architecture/Architecture-Decisions/0017-Referrer-Policy-for-MDU-Pages.md)). |
+| Q-04 | How many versions per asset should be kept by default (unlimited vs. for example 20)? **Decided:** unlimited; owners can set a limit per project ([ADR-0016](Architecture/Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md)). |
+| Q-05 | May asset IDs collide on import into another instance (then new IDs and a mapping file), or does the import fail? **Decided:** new IDs for taken ones, with the mapping in the response ([ADR-0018](Architecture/Architecture-Decisions/0018-Import-Id-Collisions.md)). |
+| Q-06 | ~~Which host name is intended?~~ Decided: the host names for the interface and public links are configuration per installation (LNK-04, NF-08); there is no fixed host name. |

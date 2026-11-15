@@ -31,6 +31,6 @@ description: Technical, organizational and convention constraints of the MDU Ass
 | Convention | Background |
 | --- | --- |
 | Design tokens and components of MDU | The interface looks like an MDU site, including light and dark mode and the MDU keyboard focus style. |
-| English user interface and architecture documentation | Consistent with MDU. The requirements document is German. |
+| English user interface and architecture documentation | Consistent with MDU. The requirements document is English too. |
 | Markdown stays portable | An asset link is an ordinary HTTPS URL; nothing in the Markdown depends on the asset server being MDU-specific. |
 | Host names are configuration | No host name is hard-coded; the UI host and the public link host are set per installation. |

@@ -21,7 +21,7 @@ Core use cases:
 | See how often and where an image is requested | STA-01 – STA-04 |
 | Upload from and check links with the `mdu` CLI | CLI-01 – CLI-03 |
 
-The full list is in the [requirements document](../Requirements.md) (German).
+The full list is in the [requirements document](../Requirements.md).
 
 ## Quality goals
 

@@ -38,7 +38,7 @@ AuditEntry ..> User
 - **Blob** is file content addressed by its SHA-256. Versions with identical content share a blob.
 - **Tag** is pure organization: an asset can have several, and none appears in a link. Tags replaced folders ([ADR-0020](Architecture-Decisions/0020-Tags-Instead-of-Folders.md)).
 
-The table sketch is in section 8 of the [requirements](../Requirements.md#8-datenmodell-skizze).
+The table sketch is in section 8 of the [requirements](../Requirements.md#8-data-model-sketch).
 
 ## Security
 

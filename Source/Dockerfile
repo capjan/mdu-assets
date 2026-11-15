@@ -15,16 +15,22 @@ RUN dotnet restore MduAssets/MduAssets.csproj -r linux-$(dpkg --print-architectu
 COPY MduAssets/ MduAssets/
 COPY MduAssets.Storage/ MduAssets.Storage/
 COPY MduAssets.Imaging/ MduAssets.Imaging/
-RUN dotnet publish MduAssets/MduAssets.csproj --configuration Release --no-restore \
+# The release workflow passes the git-cliff version; local builds get 0.0.0.
+ARG VERSION=0.0.0
+RUN dotnet publish MduAssets/MduAssets.csproj --configuration Release --no-restore -p:Version=$VERSION \
         -r linux-$(dpkg --print-architecture | sed 's/amd64/x64/') \
         -warnaserror:IL2026,IL2104,IL3050,IL3053 \
         -p:DebugType=none -p:DebugSymbols=false -p:StripSymbols=true \
         -o /app \
-    && mkdir /data
+    && mkdir /app/licenses /data \
+    && cp /root/.nuget/packages/netvips.native.linux-$(dpkg --print-architecture | sed 's/amd64/x64/')/*/THIRD-PARTY-NOTICES.md \
+        /app/licenses/libvips-THIRD-PARTY-NOTICES.md
 
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled
 WORKDIR /app
 COPY --from=build /app/ ./
+COPY THIRD-PARTY-NOTICES.md ./
+COPY Licenses/ licenses/
 # The chiseled image has no shell to create folders, so /data comes from the build stage, owned by the app user.
 COPY --from=build --chown=app:app /data /data
 USER app
