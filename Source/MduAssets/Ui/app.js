@@ -18,7 +18,9 @@ const state = {
     folder: params.get("folder"),
     filters: {
         q: params.get("q") ?? "",
-        tag: params.get("tag") ?? "",
+        // Every tag must be on an image (ORG-04); "untagged" shows the images without any.
+        tags: params.getAll("tag"),
+        untagged: params.get("untagged") === "true",
         type: params.get("type") ?? "",
         uploader: params.get("uploader") ?? "",
         unused: params.get("unused") ?? "",
@@ -164,8 +166,10 @@ const folderId = () => (state.folder && state.folder !== "none" ? Number(state.f
 function pageLink({ folder = state.folder, filters = state.filters } = {}) {
     const query = new URLSearchParams({ project: state.project });
     if (folder) query.set("folder", folder);
-    for (const [key, value] of Object.entries(filters))
-        if (value && !(key === "subfolders" && !folder)) query.set(key, String(value));
+    for (const [key, value] of Object.entries(filters)) {
+        if (key === "tags") for (const tag of value) query.append("tag", tag);
+        else if (value && !(key === "subfolders" && !folder)) query.set(key, String(value));
+    }
     return `/?${query}`;
 }
 
@@ -380,6 +384,149 @@ function toggleSelected(asset) {
     announce(`${state.selected.has(asset.id) ? "Selected" : "Deselected"} ${asset.fileName}. ${plural(state.selected.size, "image", "images")} selected.`);
 }
 
+// Tags (ORG-03, ORG-04): the sidebar lists them with their use; choosing several shows images that have all of them.
+const sameTag = (a, b) => a.toLowerCase() === b.toLowerCase();
+
+function setTagFilter(tags, untagged = false) {
+    state.filters.tags = tags.filter((tag, index) => tags.findIndex((other) => sameTag(other, tag)) === index);
+    state.filters.untagged = untagged && tags.length === 0;
+    applyFilters();
+}
+
+function toggleTag(name) {
+    const active = state.filters.tags.some((tag) => sameTag(tag, name));
+    setTagFilter(active ? state.filters.tags.filter((tag) => !sameTag(tag, name)) : [...state.filters.tags, name]);
+}
+
+function renderTags() {
+    const editable = canEdit();
+    const tags = state.facets?.tags ?? [];
+    const item = (label, count, pressed, onClick, tag = null) => {
+        const button = element("button", { class: "folder-link", type: "button", "aria-pressed": String(pressed) },
+            [element("span", { class: "folder-name", text: label }), ...(count === null ? [] : [element("span", { class: "project-count", text: numberFormat.format(count) })])]);
+        button.addEventListener("click", onClick);
+        if (editable && tag) makeTagDropTarget(button, tag);
+        const children = [button];
+        if (editable && tag) {
+            const manage = element("button", { class: "icon-button tag-manage", type: "button", "aria-label": `Rename or delete the tag ${tag}`, title: "Rename or delete" }, [
+                element("span", { "aria-hidden": "true", text: "⋯" })]);
+            manage.addEventListener("click", () => manageTag(tag));
+            children.push(manage);
+        }
+        return element("li", { class: "tag-item" }, children);
+    };
+    $("tag-list").replaceChildren(
+        ...tags.map((t) => item(t.name, t.count, state.filters.tags.some((tag) => sameTag(tag, t.name)), () => toggleTag(t.name), t.name)),
+        item("Untagged", null, state.filters.untagged, () => setTagFilter([], !state.filters.untagged)));
+    $("tag-nav").hidden = false;
+
+    // The active tags as chips above the images, each with a button to remove it.
+    const chips = state.filters.tags.map((tag) => {
+        const remove = element("button", { class: "tag-chip", type: "button", "aria-label": `Remove the tag filter ${tag}`, title: "Remove from the filter" }, [
+            element("span", { text: tag }), element("span", { "aria-hidden": "true", text: "×" })]);
+        remove.addEventListener("click", () => {
+            setTagFilter(state.filters.tags.filter((other) => !sameTag(other, tag)));
+            ($("tag-chips").querySelector("button") ?? $("search-input")).focus();
+        });
+        return remove;
+    });
+    if (state.filters.untagged) {
+        const remove = element("button", { class: "tag-chip", type: "button", "aria-label": "Show tagged images too" }, [
+            element("span", { text: "Untagged" }), element("span", { "aria-hidden": "true", text: "×" })]);
+        remove.addEventListener("click", () => setTagFilter([]));
+        chips.push(remove);
+    }
+    $("tag-chips").replaceChildren(...(chips.length ? [element("span", { class: "tag-chips-label", text: "Tags:" }), ...chips] : []));
+    $("tag-chips").hidden = chips.length === 0;
+}
+
+/** Reloads the tags and the images after tags changed. */
+async function refreshTags(message) {
+    await loadFacets();
+    state.filters.tags = state.filters.tags.filter((tag) => state.facets.tags.some((t) => sameTag(t.name, tag)));
+    renderFilters();
+    await loadAssets();
+    if (message) announce(message);
+}
+
+async function changeTags(ids, add, remove) {
+    try {
+        const result = await send(`${projectPath()}/assets/tags`, "POST", { ids, add, remove });
+        await refreshTags(`Changed the tags of ${plural(result.changed, "image", "images")}.`);
+        return true;
+    } catch (error) {
+        announce(error.message);
+        await openDialog({ title: "The tags were not changed", text: error.message, confirmLabel: "OK" });
+        return false;
+    }
+}
+
+// Dropping images on a tag in the sidebar gives them that tag.
+function makeTagDropTarget(button, tag) {
+    button.addEventListener("dragover", (event) => {
+        if (![...event.dataTransfer.types].includes(dragType)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        button.classList.add("is-drop-target");
+    });
+    button.addEventListener("dragleave", () => button.classList.remove("is-drop-target"));
+    button.addEventListener("drop", (event) => {
+        if (![...event.dataTransfer.types].includes(dragType)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        button.classList.remove("is-drop-target");
+        changeTags(JSON.parse(event.dataTransfer.getData(dragType)), [tag], []);
+    });
+}
+
+const splitTags = (text) => text.split(",").map((tag) => tag.trim()).filter(Boolean);
+
+$("tag-selected").addEventListener("click", async () => {
+    const ids = [...state.selected];
+    const chosen = state.assets.filter((asset) => state.selected.has(asset.id));
+    const suggestions = element("datalist", { id: "tag-suggestions" }, (state.facets?.tags ?? []).map((t) => element("option", { value: t.name })));
+    const input = element("input", { type: "text", autocomplete: "off", list: "tag-suggestions", placeholder: "for example Setup, macOS" });
+    const fields = [element("label", { class: "field" }, [element("span", { text: "Add tags, separated by commas" }), input]), suggestions];
+    // The tags the chosen images have now, each with a box to remove it from all of them.
+    const present = [];
+    for (const asset of chosen) for (const tag of asset.tags) if (!present.some((other) => sameTag(other, tag))) present.push(tag);
+    const boxes = present.sort((a, b) => a.localeCompare(b)).map((tag) => {
+        const count = chosen.filter((asset) => asset.tags.some((other) => sameTag(other, tag))).length;
+        return [tag, element("input", { type: "checkbox" }), count];
+    });
+    if (boxes.length)
+        fields.push(element("fieldset", { class: "tag-removal" }, [element("legend", { text: "Remove tags" }),
+            ...boxes.map(([tag, box, count]) => element("label", { class: "checkbox" }, [box, ` ${tag} (${count} of ${chosen.length})`]))]));
+    if (!await openDialog({ title: `Tags of ${plural(ids.length, "image", "images")}`, text: "Links stay the same.", fields, confirmLabel: "Save tags" })) return;
+    const add = splitTags(input.value);
+    const remove = boxes.filter(([, box]) => box.checked).map(([tag]) => tag);
+    if (add.length || remove.length) await changeTags(ids, add, remove);
+});
+
+async function manageTag(tag) {
+    const [field, input] = folderNameField(tag);
+    input.maxLength = 50;
+    // The name starts selected, so typing replaces it.
+    input.addEventListener("focus", () => input.select(), { once: true });
+    const remove = element("input", { type: "checkbox" });
+    const fields = [field, element("label", { class: "checkbox" }, [remove, " Remove this tag from all images"])];
+    if (!await openDialog({ title: `Tag ${tag}`, text: "A new name that another tag already has merges both.", fields, confirmLabel: "Save" })) return;
+    try {
+        if (remove.checked) {
+            if (!await openDialog({ title: `Remove the tag ${tag}?`, text: "The images stay; only the tag goes.", confirmLabel: "Remove tag", danger: true })) return;
+            const result = await send(`${projectPath()}/tags?name=${encodeURIComponent(tag)}`, "DELETE");
+            await refreshTags(`Removed the tag ${tag} from ${plural(result.assets, "image", "images")}.`);
+        } else if (input.value.trim() && input.value.trim() !== tag) {
+            const result = await send(`${projectPath()}/tags`, "PATCH", { from: tag, to: input.value });
+            state.filters.tags = state.filters.tags.map((other) => sameTag(other, tag) ? input.value.trim() : other);
+            await refreshTags(`Renamed the tag ${tag} to ${input.value.trim()} on ${plural(result.assets, "image", "images")}.`);
+        }
+    } catch (error) {
+        announce(error.message);
+        await openDialog({ title: "That did not work", text: error.message, confirmLabel: "OK" });
+    }
+}
+
 // Search and filters (ORG-04) live in the address, so a filtered view can be shared or bookmarked.
 async function loadFacets() {
     state.facets = await request(`${projectPath()}/facets`);
@@ -393,12 +540,15 @@ function renderFilters() {
     const options = (select, first, values) => select.replaceChildren(
         element("option", { value: "", text: first }),
         ...values.map(([value, label]) => element("option", { value, text: label })));
-    options($("filter-tag"), "Any tag", facets.tags.map((t) => [t.name, `${t.name} (${numberFormat.format(t.count)})`]));
+    const chosen = new Set(filters.tags.map((tag) => tag.toLowerCase()));
+    options($("filter-tag"), "Choose a tag", facets.tags.filter((t) => !chosen.has(t.name.toLowerCase()))
+        .map((t) => [t.name, `${t.name} (${numberFormat.format(t.count)})`]));
     options($("filter-type"), "Any type", facets.types.map((t) => [typeKey(t), typeLabels[t] ?? t]));
     options($("filter-uploader"), "Anyone", facets.uploaders.map((u) => [u, u]));
     // A search the user is still typing stays as it is when the lists refresh.
     if (document.activeElement !== $("search-input")) $("search-input").value = filters.q;
-    $("filter-tag").value = filters.tag;
+    $("filter-tag").value = "";
+    renderTags();
     $("filter-type").value = filters.type;
     $("filter-uploader").value = filters.uploader;
     $("filter-unused").value = filters.unused;
@@ -410,12 +560,13 @@ function renderFilters() {
     if (active) $("filters").open = true;
 }
 
-const filtered = () => Boolean(state.filters.q || state.filters.tag || state.filters.type || state.filters.uploader || state.filters.unused || state.filters.from || state.filters.to);
+const filtered = () => Boolean(state.filters.q || state.filters.tags.length || state.filters.untagged || state.filters.type || state.filters.uploader || state.filters.unused || state.filters.from || state.filters.to);
 
 async function applyFilters() {
     state.filters = {
         q: $("search-input").value.trim(),
-        tag: $("filter-tag").value,
+        tags: state.filters.tags,
+        untagged: state.filters.untagged,
         type: $("filter-type").value,
         uploader: $("filter-uploader").value,
         unused: $("filter-unused").value,
@@ -469,11 +620,17 @@ $("search-input").addEventListener("paste", (event) => {
         openLink(text);
     }
 });
-for (const id of ["filter-tag", "filter-type", "filter-uploader", "filter-unused", "filter-from", "filter-to", "filter-subfolders"])
+for (const id of ["filter-type", "filter-uploader", "filter-unused", "filter-from", "filter-to", "filter-subfolders"])
     $(id).addEventListener("change", () => applyFilters());
+// Narrow screens hide the sidebar; the select in the filters adds a tag to the filter there.
+$("filter-tag").addEventListener("change", () => {
+    if ($("filter-tag").value) setTagFilter([...state.filters.tags, $("filter-tag").value]);
+});
 $("clear-filters").addEventListener("click", () => {
     for (const id of ["search-input", "filter-tag", "filter-type", "filter-uploader", "filter-unused", "filter-from", "filter-to"]) $(id).value = "";
     $("filter-subfolders").checked = false;
+    state.filters.tags = [];
+    state.filters.untagged = false;
     applyFilters();
     $("search-input").focus();
 });
@@ -484,7 +641,9 @@ function assetsPath(after) {
     if (after) query.set("after", after);
     if (state.folder) query.set("folder", state.folder);
     if (state.folder && state.folder !== "none" && state.filters.subfolders) query.set("subfolders", "true");
-    for (const key of ["q", "tag", "type", "uploader", "unused"]) if (state.filters[key]) query.set(key, state.filters[key]);
+    for (const key of ["q", "type", "uploader", "unused"]) if (state.filters[key]) query.set(key, state.filters[key]);
+    for (const tag of state.filters.tags) query.append("tag", tag);
+    if (state.filters.untagged) query.set("untagged", "true");
     // Dates are days of the viewer's time zone, as the list shows them; the server gets the exact times.
     if (state.filters.from) query.set("fromTime", localMidnight(state.filters.from));
     if (state.filters.to) query.set("beforeTime", localMidnight(state.filters.to, 1));
@@ -580,6 +739,7 @@ function sortedAssets() {
 function renderSelectionBar() {
     $("selection-bar").hidden = state.selected.size === 0;
     $("selection-count").textContent = `${plural(state.selected.size, "image", "images")} selected`;
+    $("tag-selected").hidden = !canEdit();
     $("move-selected").hidden = !canEdit();
     $("trash-selected").hidden = !canEdit();
 }
@@ -957,7 +1117,9 @@ function upload(file, name, alt, { keepDuplicate = false, card = createCard(name
         const folder = folderId() ? `&folder=${folderId()}` : "";
         const duplicates = keepDuplicate ? "" : "&duplicates=reject";
         const lossless = losslessQuery() ? `&${losslessQuery()}` : "";
-        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${folder}${duplicates}${lossless}`);
+        // Uploads get the tags the list is filtered by, as they land in the open folder.
+        const tags = state.filters.tags.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("");
+        xhr.open("POST", `${api}${projectPath()}/assets?name=${encodeURIComponent(name)}${alt ? `&alt=${encodeURIComponent(alt)}` : ""}${folder}${duplicates}${lossless}${tags}`);
         xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.setRequestHeader("Accept", "application/json");
         xhr.responseType = "json";

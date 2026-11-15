@@ -1322,3 +1322,53 @@ html:has(.image-lightbox[open]) { overflow: hidden; }
 
     .image-lightbox-stage.is-animating img { transition: none; }
 }
+
+/* Tags in the sidebar (ORG-03): a filter button per tag, pressed when it filters, and a menu button for editors. */
+.tag-item { display: flex; align-items: center; gap: 0.15rem; }
+
+.tag-item .folder-link {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    background: none;
+    font: inherit;
+    font-size: 0.9rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tag-item .folder-link[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-current); font-weight: 600; }
+
+.tag-manage { flex: none; width: 1.75rem; height: 1.75rem; color: var(--text-secondary); opacity: 0; }
+
+.tag-item:hover .tag-manage,
+.tag-manage:focus-visible { opacity: 1; }
+
+@media (hover: none) {
+    .tag-manage { opacity: 1; }
+}
+
+.tag-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0 0 1rem; }
+
+.tag-chips-label { color: var(--text-secondary); font-size: 0.875rem; }
+
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 1.85rem;
+    padding: 0.15rem 0.5rem 0.15rem 0.75rem;
+    border: 1px solid var(--link);
+    border-radius: 999px;
+    background: var(--alert-note-background);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+.tag-chip:hover { border-color: var(--text-primary); }
+
+.tag-removal { display: grid; gap: 0.15rem; margin: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; }
+
+.tag-removal legend { padding: 0 0.25rem; color: var(--text-secondary); font-size: 0.875rem; }
