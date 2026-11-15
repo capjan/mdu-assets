@@ -1,7 +1,9 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using MduAssets.Api;
 using MduAssets.Imaging.Test;
 using MduAssets.Security;
@@ -144,5 +146,39 @@ public sealed class TagsTest : IDisposable
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PostAsJsonAsync("/api/v1/projects/default/assets/tags", new TagChange([asset.Id], ["x"], []), Json, Cancel)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.DeleteAsync("/api/v1/projects/default/tags?name=Setup", Cancel)).StatusCode);
+    }
+
+    [Fact]
+    public async Task ImportsFoldersOfOldExportsAsTags()
+    {
+        var asset = await Upload("deep.png", "Draft");
+        var export = await _admin.GetByteArrayAsync("/api/v1/projects/default/export", Cancel);
+
+        // Turn the export into format 1, as servers with folders wrote it: Guides/Setup holds the image.
+        using var buffer = new MemoryStream();
+        buffer.Write(export);
+        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = zip.GetEntry(TransferEndpoints.ManifestName)!;
+            JsonNode manifest;
+            using (var reader = entry.Open())
+                manifest = JsonNode.Parse(reader)!;
+            Assert.Null(manifest["folders"]);
+            manifest["format"] = 1;
+            manifest["folders"] = new JsonArray(
+                new JsonObject { ["id"] = 7, ["parentId"] = null, ["name"] = "Guides" },
+                new JsonObject { ["id"] = 8, ["parentId"] = 7, ["name"] = "Setup" });
+            manifest["assets"]![0]!["folderId"] = 8;
+            entry.Delete();
+            using var writer = zip.CreateEntry(TransferEndpoints.ManifestName).Open();
+            JsonSerializer.Serialize(writer, manifest);
+        }
+
+        var response = await _admin.PostAsync("/api/v1/projects/import?slug=old", new ByteArrayContent(buffer.ToArray()), Cancel);
+        var copy = (await _admin.GetFromJsonAsync<AssetList>("/api/v1/projects/old/assets", Json, Cancel))!.Items.Single();
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(["Draft", "Guides", "Setup"], copy.Tags.Order(StringComparer.Ordinal));
+        Assert.Equal(asset.FileName, copy.FileName);
     }
 }

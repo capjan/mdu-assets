@@ -33,8 +33,8 @@ public static class TagEndpoints
     {
         if (!access.TryGet(user, project, ProjectRole.Editor, out var target, out var problem))
             return problem;
-        if (change.Ids is not { Count: > 0 and <= AssetEndpoints.MaxMoveCount } ids || ids.Any(id => !AssetId.IsValid(id)))
-            return Invalid("Invalid selection", $"Give 1 to {AssetEndpoints.MaxMoveCount} asset ids.");
+        if (change.Ids is not { Count: > 0 and <= AssetEndpoints.MaxBulkCount } ids || ids.Any(id => !AssetId.IsValid(id)))
+            return Invalid("Invalid selection", $"Give 1 to {AssetEndpoints.MaxBulkCount} asset ids.");
         var (add, error) = TagNames.Normalize(change.Add ?? []);
         if (error is not null)
             return Invalid("Invalid tags", error);

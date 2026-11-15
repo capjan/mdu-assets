@@ -14,7 +14,7 @@ Core use cases:
 | Use case | Requirements |
 | --- | --- |
 | Paste or drop an image and copy a ready-made Markdown snippet | UP-01 – UP-05, LNK-05 – LNK-08 |
-| See and organize all images of a project in folders and tags without changing links | ORG-01 – ORG-06, LNK-01 |
+| See and organize all images of a project with tags without changing links | ORG-02 – ORG-06, LNK-01 |
 | Replace an image under the same link and restore earlier versions | VER-01 – VER-03 |
 | Work together in projects; admins manage all projects and users | PRJ-01 – PRJ-05, AUTH-04 |
 | Upload and query images through an API from external tools | API-01 – API-07, AUTH-06 |

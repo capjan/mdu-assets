@@ -156,54 +156,6 @@ export function openDialog({ title, text = "", fields = [], confirmLabel, danger
     });
 }
 
-/** Folders in tree order with their depth: parents before children, siblings by name. */
-export function folderTree(folders) {
-    const children = new Map();
-    for (const folder of folders) {
-        const key = folder.parentId ?? 0;
-        if (!children.has(key)) children.set(key, []);
-        children.get(key).push(folder);
-    }
-    const ordered = [];
-    const visit = (parentId, depth) => {
-        for (const folder of (children.get(parentId) ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
-            ordered.push({ ...folder, depth });
-            visit(folder.id, depth + 1);
-        }
-    };
-    visit(0, 0);
-    return ordered;
-}
-
-/** The ids of a folder and everything below it. */
-export function folderSubtree(folders, id) {
-    const ids = new Set([id]);
-    let grew = true;
-    while (grew) {
-        grew = false;
-        for (const folder of folders)
-            if (folder.parentId !== null && ids.has(folder.parentId) && !ids.has(folder.id)) { ids.add(folder.id); grew = true; }
-    }
-    return ids;
-}
-
-/** Options for a folder select: a first entry for "no folder", then the tree indented by depth. */
-export function folderOptions(folders, { noneLabel, selected = "", exclude = new Set() }) {
-    return [
-        element("option", { value: "", text: noneLabel, selected: selected === "" }),
-        ...folderTree(folders).filter((folder) => !exclude.has(folder.id)).map((folder) =>
-            element("option", { value: String(folder.id), selected: String(folder.id) === String(selected), text: `${" ".repeat(folder.depth)}${folder.name}` })),
-    ];
-}
-
-/** The folder and its parents, from the top level down. */
-export function folderPath(folders, id) {
-    const byId = new Map(folders.map((folder) => [folder.id, folder]));
-    const path = [];
-    for (let folder = byId.get(id); folder; folder = byId.get(folder.parentId)) path.unshift(folder);
-    return path;
-}
-
 /**
  * Says which images were requested in the last 30 days, with counts and referring pages (DEL-01), so nobody moves an image
  * to the trash that documentation still shows. Empty when none of them was requested lately.
@@ -229,6 +181,8 @@ const auditActions = {
     "asset.upload": "Uploaded", "asset.update": "Changed", "asset.move": "Moved images", "asset.pair": "Paired", "asset.unpair": "Unpaired",
     "asset.version": "New version", "asset.version.restore": "Restored a version", "asset.version.delete": "Deleted a version",
     "asset.trash": "Moved to the trash", "asset.restore": "Restored", "asset.purge": "Deleted for good", "trash.empty": "Emptied the trash",
+    "asset.tags": "Changed tags", "tag.rename": "Renamed a tag", "tag.delete": "Deleted a tag",
+    // Entries from the time before tags replaced folders.
     "folder.create": "Created a folder", "folder.rename": "Renamed a folder", "folder.move": "Moved a folder", "folder.delete": "Deleted a folder",
     "project.create": "Created the project", "project.import": "Imported a project", "project.update": "Changed the project", "project.delete": "Deleted a project",
     "member.set": "Set a member", "member.remove": "Removed a member", "password.change": "Changed the password",

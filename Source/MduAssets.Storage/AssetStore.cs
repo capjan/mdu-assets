@@ -8,7 +8,6 @@ public sealed record AssetFile(
     string Id,
     long ProjectId,
     string ProjectSlug,
-    long? FolderId,
     string FileName,
     string AltText,
     string Description,
@@ -55,7 +54,7 @@ public sealed record NewVersion(string BlobSha256, string ContentType, long Size
 
 /// <summary>An asset read from a project export, with its blobs already stored on this instance.</summary>
 public sealed record ImportedAsset(
-    long ProjectId, long? FolderId, string FileName, string AltText, string Description, IReadOnlyList<string> Tags,
+    long ProjectId, string FileName, string AltText, string Description, IReadOnlyList<string> Tags,
     int CurrentVersion, IReadOnlyList<ImportedVersion> Versions, long ImportedBy, DateTimeOffset CreatedAt);
 
 public sealed record ImportedVersion(int Number, string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, DateTimeOffset CreatedAt, VersionOriginal? Original = null);
@@ -65,7 +64,6 @@ public sealed record TrashedAsset(AssetFile Asset, DateTimeOffset DeletedAt, str
 
 public sealed record NewAsset(
     long ProjectId,
-    long? FolderId,
     string FileName,
     string AltText,
     string BlobSha256,
@@ -78,13 +76,11 @@ public sealed record NewAsset(
     VersionOriginal? Original = null);
 
 /// <summary>
-/// Search and filters for the asset list (ORG-04). <c>FolderIds</c> limits to these folders; <c>Unfiled</c> to assets in no folder.
+/// Search and filters for the asset list (ORG-04). <c>Tags</c> must all be on an asset; <c>Untagged</c> finds assets without tags.
 /// Dates are UTC; <c>Before</c> is exclusive.
 /// </summary>
 public sealed record AssetQuery(
     string? Text = null,
-    IReadOnlyList<long>? FolderIds = null,
-    bool Unfiled = false,
     IReadOnlyList<string>? Tags = null,
     string? ContentType = null,
     DateTimeOffset? From = null,
@@ -124,12 +120,11 @@ public sealed class AssetStore(Database database)
                 {
                     insertAsset.Transaction = transaction;
                     insertAsset.CommandText = """
-                        INSERT INTO assets (id, project_id, folder_id, file_name, alt_text, current_version, created_by, created_at)
-                        VALUES ($id, $project, $folder, $fileName, $alt, 1, $user, $now);
+                        INSERT INTO assets (id, project_id, file_name, alt_text, current_version, created_by, created_at)
+                        VALUES ($id, $project, $fileName, $alt, 1, $user, $now);
                         """;
                     insertAsset.Parameters.AddWithValue("$id", id);
                     insertAsset.Parameters.AddWithValue("$project", asset.ProjectId);
-                    insertAsset.Parameters.AddWithValue("$folder", (object?)asset.FolderId ?? DBNull.Value);
                     insertAsset.Parameters.AddWithValue("$fileName", asset.FileName);
                     insertAsset.Parameters.AddWithValue("$alt", asset.AltText);
                     insertAsset.Parameters.AddWithValue("$user", asset.CreatedBy);
@@ -212,16 +207,6 @@ public sealed class AssetStore(Database database)
                     """);
                 command.Parameters.AddWithValue(parameter, "%" + EscapeLike(TagKey(words[i])) + "%");
             }
-        }
-
-        if (query.Unfiled)
-            sql.Append(" AND a.folder_id IS NULL");
-        else if (query.FolderIds is { Count: > 0 } folders)
-        {
-            var names = folders.Select((_, i) => $"$folder{i}").ToList();
-            sql.Append(" AND a.folder_id IN (").Append(string.Join(", ", names)).Append(')');
-            for (var i = 0; i < folders.Count; i++)
-                command.Parameters.AddWithValue(names[i], folders[i]);
         }
 
         // Every chosen tag must be on the image (ORG-04): more tags narrow the list down.
@@ -482,7 +467,7 @@ public sealed class AssetStore(Database database)
         while (reader.Read())
         {
             var asset = ReadAsset(reader);
-            assets.Add(new TrashedAsset(asset, asset.DeletedAt!.Value, reader.IsDBNull(26) ? null : reader.GetString(26)));
+            assets.Add(new TrashedAsset(asset, asset.DeletedAt!.Value, reader.IsDBNull(25) ? null : reader.GetString(25)));
         }
 
         return assets;
@@ -534,7 +519,7 @@ public sealed class AssetStore(Database database)
             mark.CommandText = """
                 DELETE FROM tags WHERE asset_id = $id;
                 DELETE FROM asset_referrers WHERE asset_id = $id;
-                UPDATE assets SET purged_at = $now, folder_id = NULL WHERE id = $id AND deleted_at IS NOT NULL;
+                UPDATE assets SET purged_at = $now WHERE id = $id AND deleted_at IS NOT NULL;
                 """;
             mark.Parameters.AddWithValue("$id", id);
             mark.Parameters.AddWithValue("$now", Clock.Now());
@@ -577,10 +562,10 @@ public sealed class AssetStore(Database database)
             }
 
             Execute("""
-                INSERT INTO assets (id, project_id, folder_id, file_name, alt_text, description, current_version, created_by, created_at)
-                VALUES ($id, $project, $folder, $fileName, $alt, $description, $current, $user, $createdAt);
+                INSERT INTO assets (id, project_id, file_name, alt_text, description, current_version, created_by, created_at)
+                VALUES ($id, $project, $fileName, $alt, $description, $current, $user, $createdAt);
                 """,
-                ("$id", id), ("$project", asset.ProjectId), ("$folder", asset.FolderId), ("$fileName", asset.FileName), ("$alt", asset.AltText),
+                ("$id", id), ("$project", asset.ProjectId), ("$fileName", asset.FileName), ("$alt", asset.AltText),
                 ("$description", asset.Description), ("$current", asset.CurrentVersion), ("$user", asset.ImportedBy), ("$createdAt", Clock.Format(asset.CreatedAt)));
             foreach (var version in asset.Versions)
                 Execute("""
@@ -619,13 +604,12 @@ public sealed class AssetStore(Database database)
     }
 
     /// <summary>
-    /// Changes the descriptive fields and, with <paramref name="changeFolder"/>, the folder, in one transaction.
+    /// Changes the descriptive fields in one transaction.
     /// <paramref name="tags"/> replaces all tags when given. The public link stays valid,
     /// because only the id is used for lookups.
     /// </summary>
     /// <returns>The updated asset, or <c>null</c> for an unknown id.</returns>
-    public AssetFile? Update(string id, string fileName, string altText, string description, IReadOnlyCollection<string>? tags,
-        bool changeFolder = false, long? folderId = null)
+    public AssetFile? Update(string id, string fileName, string altText, string description, IReadOnlyCollection<string>? tags)
     {
         using (var connection = database.Open())
         using (var transaction = connection.BeginTransaction())
@@ -634,12 +618,8 @@ public sealed class AssetStore(Database database)
             {
                 command.Transaction = transaction;
                 command.CommandText = """
-                    UPDATE assets SET file_name = $fileName, alt_text = $alt, description = $description,
-                        folder_id = CASE WHEN $changeFolder THEN $folder ELSE folder_id END
-                    WHERE id = $id;
+                    UPDATE assets SET file_name = $fileName, alt_text = $alt, description = $description WHERE id = $id;
                     """;
-                command.Parameters.AddWithValue("$changeFolder", changeFolder);
-                command.Parameters.AddWithValue("$folder", (object?)folderId ?? DBNull.Value);
                 command.Parameters.AddWithValue("$id", id);
                 command.Parameters.AddWithValue("$fileName", fileName);
                 command.Parameters.AddWithValue("$alt", altText);
@@ -674,24 +654,6 @@ public sealed class AssetStore(Database database)
         }
 
         return FindCurrent(id);
-    }
-
-    /// <summary>
-    /// Moves assets of a project into a folder of the same project, or out of all folders for <c>null</c> (ORG-02).
-    /// Assets of other projects are left alone. Returns the number of moved assets.
-    /// </summary>
-    public int Move(long projectId, IReadOnlyCollection<string> ids, long? folderId)
-    {
-        using var connection = database.Open();
-        using var command = connection.CreateCommand();
-        var distinct = ids.Distinct(StringComparer.Ordinal).ToList();
-        var names = distinct.Select((_, i) => $"$id{i}").ToList();
-        command.CommandText = $"UPDATE assets SET folder_id = $folder WHERE project_id = $project AND deleted_at IS NULL AND id IN ({string.Join(", ", names)});";
-        for (var i = 0; i < distinct.Count; i++)
-            command.Parameters.AddWithValue(names[i], distinct[i]);
-        command.Parameters.AddWithValue("$project", projectId);
-        command.Parameters.AddWithValue("$folder", (object?)folderId ?? DBNull.Value);
-        return command.ExecuteNonQuery();
     }
 
     /// <summary>
@@ -906,7 +868,7 @@ public sealed class AssetStore(Database database)
     }
 
     private const string SelectCurrent = """
-        SELECT a.id, a.project_id, p.slug, a.folder_id, a.file_name, a.alt_text, a.description,
+        SELECT a.id, a.project_id, p.slug, a.file_name, a.alt_text, a.description,
                (SELECT group_concat(t.name, char(31)) FROM (SELECT name FROM tags WHERE asset_id = a.id ORDER BY key) t),
                v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, u.name, v.created_at,
                v.animated, a.pair_asset_id, a.pair_role, pa.file_name, s.hit_count, s.last_hit_at, a.deleted_at,
@@ -922,22 +884,21 @@ public sealed class AssetStore(Database database)
     private static AssetFile ReadAsset(SqliteDataReader reader) =>
         new(
             reader.GetString(0), reader.GetInt64(1), reader.GetString(2),
-            reader.IsDBNull(3) ? null : reader.GetInt64(3),
-            reader.GetString(4), reader.GetString(5), reader.GetString(6),
-            reader.IsDBNull(7) ? [] : reader.GetString(7).Split(TagSeparator),
-            reader.GetInt32(8), reader.GetString(9), reader.GetString(10), reader.GetInt64(11),
+            reader.GetString(3), reader.GetString(4), reader.GetString(5),
+            reader.IsDBNull(6) ? [] : reader.GetString(6).Split(TagSeparator),
+            reader.GetInt32(7), reader.GetString(8), reader.GetString(9), reader.GetInt64(10),
+            reader.IsDBNull(11) ? null : reader.GetInt32(11),
             reader.IsDBNull(12) ? null : reader.GetInt32(12),
-            reader.IsDBNull(13) ? null : reader.GetInt32(13),
-            reader.GetString(14),
-            Clock.Parse(reader.GetString(15)),
-            reader.GetBoolean(16),
+            reader.GetString(13),
+            Clock.Parse(reader.GetString(14)),
+            reader.GetBoolean(15),
+            reader.IsDBNull(16) ? null : reader.GetString(16),
             reader.IsDBNull(17) ? null : reader.GetString(17),
             reader.IsDBNull(18) ? null : reader.GetString(18),
-            reader.IsDBNull(19) ? null : reader.GetString(19),
-            reader.IsDBNull(22) ? null : Clock.Parse(reader.GetString(22)),
-            reader.IsDBNull(20) ? 0 : reader.GetInt64(20),
             reader.IsDBNull(21) ? null : Clock.Parse(reader.GetString(21)),
-            ReadOriginal(reader, 23));
+            reader.IsDBNull(19) ? 0 : reader.GetInt64(19),
+            reader.IsDBNull(20) ? null : Clock.Parse(reader.GetString(20)),
+            ReadOriginal(reader, 22));
 
     private static VersionOriginal? ReadOriginal(SqliteDataReader reader, int first) =>
         reader.IsDBNull(first + 1) ? null

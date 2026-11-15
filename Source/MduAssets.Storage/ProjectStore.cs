@@ -226,7 +226,6 @@ public sealed class ProjectStore(Database database)
                 DELETE FROM asset_referrers WHERE asset_id IN (SELECT id FROM assets WHERE project_id = $id);
                 UPDATE assets SET pair_asset_id = NULL WHERE project_id = $id;
                 DELETE FROM assets WHERE project_id = $id;
-                DELETE FROM folders WHERE project_id = $id;
                 DELETE FROM projects WHERE id = $id;
                 """;
             delete.Parameters.AddWithValue("$id", id);

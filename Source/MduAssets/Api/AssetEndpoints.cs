@@ -7,13 +7,14 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace MduAssets.Api;
 
-/// <summary>Reading, uploading, editing, moving and finding assets. Viewers read, editors and owners change (section 4.2).</summary>
+/// <summary>Reading, uploading, editing and finding assets. Viewers read, editors and owners change (section 4.2).</summary>
 public static class AssetEndpoints
 {
     public const int DefaultPageSize = 100;
     public const int MaxPageSize = 500;
     public const int MaxDescriptionLength = 1000;
-    public const int MaxMoveCount = 500;
+    /// <summary>The most images one request may tag at once.</summary>
+    public const int MaxBulkCount = 500;
 
     private static readonly Dictionary<string, string> TypeNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -31,7 +32,6 @@ public static class AssetEndpoints
     {
         api.MapGet("/projects/{project}/assets", List);
         api.MapPost("/projects/{project}/assets", UploadEndpoint.Handle).RequireRateLimiting(UploadLimits.Policy);
-        api.MapPost("/projects/{project}/assets/move", Move);
         api.MapGet("/projects/{project}/facets", Facets);
         api.MapGet("/assets/{id}", Get);
         api.MapPatch("/assets/{id}", Update);
@@ -44,15 +44,15 @@ public static class AssetEndpoints
 
     /// <summary>
     /// Lists a project's assets newest first, at most <c>limit</c> at a time; <c>next</c> is the <c>after</c> value of the
-    /// following page. Filters (ORG-04): <c>q</c> (words in name, alt text, description or tags), <c>folder</c> (an id or
-    /// <c>none</c>), <c>subfolders</c>, <c>tag</c> (repeatable; every tag must be on the image), <c>untagged</c>, <c>type</c> (for example <c>png</c>), <c>from</c> and <c>to</c>
+    /// following page. Filters (ORG-04): <c>q</c> (words in name, alt text, description or tags), <c>tag</c> (repeatable; every tag
+    /// must be on the image), <c>untagged</c>, <c>type</c> (for example <c>png</c>), <c>from</c> and <c>to</c>
     /// (upload dates in UTC, inclusive), <c>fromTime</c> and <c>beforeTime</c> (ISO 8601 times with offset; the web interface
     /// sends these for the days of its own time zone; <c>beforeTime</c> is exclusive), <c>uploader</c>.
     /// </summary>
     private static Results<Ok<AssetList>, ProblemHttpResult> List(
-        string project, int? limit, string? after, string? q, string? folder, bool? subfolders, string[]? tag, bool? untagged, string? type,
+        string project, int? limit, string? after, string? q, string[]? tag, bool? untagged, string? type,
         string? from, string? to, string? fromTime, string? beforeTime, string? uploader, int? unused,
-        ClaimsPrincipal user, ProjectAccess access, AssetStore assets, FolderStore folders, ServerSettings settings)
+        ClaimsPrincipal user, ProjectAccess access, AssetStore assets, ServerSettings settings)
     {
         if (!access.TryGet(user, project, ProjectRole.Viewer, out var target, out var problem))
             return problem;
@@ -61,16 +61,6 @@ public static class AssetEndpoints
             return Invalid("Invalid limit", $"The limit must be between 1 and {MaxPageSize}.");
         if (after is not null && (!AssetId.IsValid(after) || !assets.Contains(target.Id, after)))
             return Invalid("Invalid cursor", $"There is no asset '{after}' in this project to continue after.");
-
-        if (FolderEndpoints.ParseFolder(folder, target.Id, folders) is { Problem: { } folderProblem })
-            return folderProblem;
-        IReadOnlyList<long>? folderIds = null;
-        var unfiled = folder is "none";
-        if (!unfiled && folder is not null)
-        {
-            var folderId = long.Parse(folder, CultureInfo.InvariantCulture);
-            folderIds = subfolders == true ? folders.Subtree(folderId) : [folderId];
-        }
 
         string? contentType = null;
         if (type is not null && !TypeNames.TryGetValue(type, out contentType) && !TypeNames.ContainsValue(contentType = type))
@@ -83,7 +73,7 @@ public static class AssetEndpoints
         if (unused is < 0 or > 3650)
             return Invalid("Invalid filter", "unused is 0 for never requested, or a number of days up to 3650.");
 
-        var query = new AssetQuery(q, folderIds, unfiled, tag, contentType, Later(start, startTime), Earlier(end?.AddDays(1), endTime), uploader, unused,
+        var query = new AssetQuery(q, tag, contentType, Later(start, startTime), Earlier(end?.AddDays(1), endTime), uploader, unused,
             Untagged: untagged == true);
         var page = assets.List(target.Id, size, after, query);
         var items = page.Take(size).Select(a => AssetResponse.From(a, settings)).ToList();
@@ -126,7 +116,7 @@ public static class AssetEndpoints
     }
 
     private static Results<Ok<AssetResponse>, ProblemHttpResult> Update(
-        string id, AssetChanges changes, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, FolderStore folders, ServerSettings settings)
+        string id, AssetChanges changes, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, ServerSettings settings)
     {
         if (!AssetId.IsValid(id) || assets.FindCurrent(id) is not { } asset)
             return ProjectAccess.UnknownAsset(id);
@@ -152,25 +142,7 @@ public static class AssetEndpoints
                 return Invalid("Invalid tags", error);
         }
 
-        var folder = FolderEndpoints.ParseFolder(changes.Folder, asset.ProjectId, folders);
-        if (folder.Problem is { } folderProblem)
-            return folderProblem;
-
-        return TypedResults.Ok(AssetResponse.From(assets.Update(id, fileName, altText, description, tags, changes.Folder is not null, folder.Id)!, settings));
-    }
-
-    /// <summary>Moves assets of the project into a folder or out of all folders (ORG-02); their links stay the same.</summary>
-    private static Results<Ok<AssetMoveResult>, ProblemHttpResult> Move(
-        string project, AssetMove move, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, FolderStore folders)
-    {
-        if (!access.TryGet(user, project, ProjectRole.Editor, out var target, out var problem))
-            return problem;
-        if (move.Ids is not { Count: > 0 and <= MaxMoveCount } ids || ids.Any(id => !AssetId.IsValid(id)))
-            return Invalid("Invalid selection", $"Give 1 to {MaxMoveCount} asset ids.");
-        if (move.FolderId is { } folderId && folders.Find(target.Id, folderId) is null)
-            return FolderEndpoints.UnknownFolder(folderId);
-
-        return TypedResults.Ok(new AssetMoveResult(assets.Move(target.Id, ids, move.FolderId)));
+        return TypedResults.Ok(AssetResponse.From(assets.Update(id, fileName, altText, description, tags)!, settings));
     }
 
     private static Results<Ok<FacetsResponse>, ProblemHttpResult> Facets(string project, ClaimsPrincipal user, ProjectAccess access, AssetStore assets)

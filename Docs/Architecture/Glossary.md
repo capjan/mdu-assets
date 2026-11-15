@@ -16,9 +16,10 @@ description: Terms used in the architecture documentation of the MDU Asset Serve
 | MDU | Markdown Documentation Utility, the `mdu` .NET tool that renders Markdown to static sites. |
 | Native AOT | Ahead-of-time compilation of .NET code to a native program without a JIT. |
 | Original | The upload a version was converted from (UP-11); its type and size are recorded, the file itself is not kept. |
-| Project | Container for assets and folders with its own members and roles. |
+| Project | Container for assets with its own members and roles. |
 | Public host | Host name that serves only public links `/i/…`. |
 | Snippet | Ready-to-paste text for an asset, such as a Markdown image with alt text. |
+| Tag | A free keyword on an asset; an asset can have several. Tags organize and filter, replace the former folders and never appear in a link. |
 | UI host | Host name that serves the web interface and the API. |
 | Variant | A derived file of a version, for example 800 px wide or the preview; cached and re-creatable. |
 | Version | One immutable content of an asset. |

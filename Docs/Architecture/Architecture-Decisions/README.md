@@ -28,6 +28,7 @@ Each significant, hard-to-reverse decision is recorded as one file in the [MADR]
 | [0017](0017-Referrer-Policy-for-MDU-Pages.md) | MDU keeps the browser default referrer policy for asset images | Accepted |
 | [0018](0018-Import-Id-Collisions.md) | Imports keep free ids and map the others to new ones | Accepted |
 | [0019](0019-Format-Chosen-on-Upload.md) | Choose WebP once after upload, keep the original, no negotiation by `Accept` | Accepted |
+| [0020](0020-Tags-Instead-of-Folders.md) | Tags replace folders; existing folders become tags | Accepted |
 
 ## Template
 

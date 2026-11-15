@@ -237,6 +237,8 @@ To restore, stop the server, replace the contents of the volume with a backup fo
 
 Owners export a project in **Project settings** as a zip with the current or all versions; admins (or everybody, when an admin allows creating projects) import it on **New project**. Image ids stay the same where the target server has not used them; the others get new ids, listed after the import ([ADR-0018](Architecture/Architecture-Decisions/0018-Import-Id-Collisions.md)).
 
+Exports from servers that still had folders can be imported too: each image gets its folder and the folders above it as tags ([ADR-0020](Architecture/Architecture-Decisions/0020-Tags-Instead-of-Folders.md)). The update itself converts folders the same way.
+
 ## Sign-in
 
 The web interface uses HTTP Basic authentication: the browser asks for user name and password on the first visit and sends them with every request. Two consequences until session sign-in arrives:

@@ -34,8 +34,8 @@ flowchart LR
 | ID | Scenario | Expected response |
 | --- | --- | --- |
 | U1 | An author pastes a screenshot into the project view. | The Markdown snippet is shown and, where the browser allows, copied within 2 s on a normal connection, without further input. |
-| U2 | An author uses only the keyboard. | Upload by paste, selecting an asset, copying its snippet and moving it to another folder work without a mouse, with a visible MDU focus ring on every step. |
-| L1 | An editor moves an asset to another folder and renames the folder and the project. | The previously copied link returns the same image. |
+| U2 | An author uses only the keyboard. | Upload by paste, selecting an asset, copying its snippet and tagging it work without a mouse, with a visible MDU focus ring on every step. |
+| L1 | An editor changes the tags of an asset and renames a tag and the project. | The previously copied link returns the same image. |
 | L2 | An editor replaces an image. | The link returns the new image after at most the configured cache time; the old version stays reachable under its version link. |
 | L3 | The operator upgrades the server or moves a project to another instance by export and import. | Every existing link keeps working (on the new instance, with the same public host). |
 | S1 | A user uploads an SVG with script, event handlers and external references. | The stored file contains none of them; opening the public link directly runs no script. |

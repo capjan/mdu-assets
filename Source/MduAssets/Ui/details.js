@@ -1,6 +1,6 @@
-// Details of one image (ORG-06): large preview, snippets, description, tags, folder and metadata.
+// Details of one image (ORG-06): large preview, snippets, description, tags and metadata.
 import {
-    $, announce, bindLosslessToggle, clearFormError, copyText, dateFormat, losslessQuery, element, flashCopied, folderOptions, formatSize, handleSubmit,
+    $, announce, bindLosslessToggle, clearFormError, copyText, dateFormat, losslessQuery, element, flashCopied, formatSize, handleSubmit,
     numberFormat, openDialog, plural, readSetting, recentUse, request, send, writeSetting,
 } from "./common.js";
 import { enableLightbox } from "./lightbox.js";
@@ -11,16 +11,14 @@ const typeNames = {
     "image/avif": "AVIF", "image/bmp": "BMP", "image/svg+xml": "SVG",
 };
 
-const projectLink = (project, folderId) =>
-    `/?project=${encodeURIComponent(project.slug)}${folderId ? `&folder=${folderId}` : ""}`;
+const projectLink = (project) => `/?project=${encodeURIComponent(project.slug)}`;
 
 /** Set while a details page is open: files dropped or pasted there replace the image (VER-01). */
 export let replaceWithFile = null;
 
-export async function showDetails(project, id, { editable: canEdit, onFolderChange, me }) {
-    const [asset, folders, facets] = await Promise.all([
+export async function showDetails(project, id, { editable: canEdit, me }) {
+    const [asset, facets] = await Promise.all([
         request(`/assets/${encodeURIComponent(id)}`),
-        request(`/projects/${encodeURIComponent(project.slug)}/folders`).then((list) => list.items),
         request(`/projects/${encodeURIComponent(project.slug)}/facets`),
     ]);
     if (asset.project !== project.slug) {
@@ -31,7 +29,7 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
     let current = asset;
     // Images in the trash are read-only until they are restored.
     const editable = canEdit && !asset.deletedAt;
-    $("asset-back").href = projectLink(project, asset.folderId);
+    $("asset-back").href = projectLink(project);
     $("asset-back").textContent = `Back to ${project.name}`;
 
     // Preview on a checkerboard, light or dark background; the choice is remembered.
@@ -151,7 +149,6 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
             ? `${plural(asset.requests, "request", "requests")}, the last on ${dateFormat.format(new Date(asset.lastRequestAt))}.`
             : "Not requested yet.";
 
-        const path = folders.find((folder) => folder.id === asset.folderId);
         const meta = [
             ["Type", typeNames[asset.contentType] ?? asset.contentType],
             ...(asset.originalContentType
@@ -159,7 +156,6 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
                 : []),
             ["Dimensions", asset.width && asset.height ? `${asset.width} × ${asset.height} pixels` : "–"],
             ["Size", formatSize(asset.size)],
-            ["Folder", path?.name ?? "Not in a folder"],
             ["Uploaded", dateFormat.format(new Date(asset.createdAt))],
             ["Uploaded by", asset.uploadedBy],
             ["Version", String(asset.version)],
@@ -170,13 +166,12 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
     };
     render(asset);
 
-    // Description, tags and folder; viewers see them read-only.
+    // Description and tags; viewers see them read-only.
     const form = $("asset-form");
-    const fields = { fileName: $("asset-file-name"), altText: $("asset-alt"), description: $("asset-description"), folder: $("asset-folder") };
+    const fields = { fileName: $("asset-file-name"), altText: $("asset-alt"), description: $("asset-description") };
     fields.fileName.value = asset.fileName;
     fields.altText.value = asset.altText;
     fields.description.value = asset.description;
-    fields.folder.replaceChildren(...folderOptions(folders, { noneLabel: "Not in a folder", selected: asset.folderId ?? "" }));
     $("asset-tag-suggestions").replaceChildren(...facets.tags.map((tag) => element("option", { value: tag.name })));
 
     let tags = [...asset.tags];
@@ -217,25 +212,20 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
     renderTags();
 
     for (const field of [fields.fileName, fields.altText, fields.description, tagInput]) field.readOnly = !editable;
-    fields.folder.disabled = !editable;
     $("asset-save").hidden = !editable;
     $("asset-tag-hint").hidden = !editable;
 
     handleSubmit(form, async () => {
         clearFormError(form);
         if (tagInput.value.trim()) addTags();
-        // One request, so text, tags and folder are saved together or not at all.
-        const folderChanged = (fields.folder.value || null) !== (current.folderId === null ? null : String(current.folderId));
+        // One request, so text and tags are saved together or not at all.
         const updated = await send(`/assets/${encodeURIComponent(current.id)}`, "PATCH", {
             fileName: fields.fileName.value, altText: fields.altText.value, description: fields.description.value, tags,
-            folder: fields.folder.value || "none",
         });
-        if (folderChanged) await onFolderChange?.();
         fields.fileName.value = updated.fileName;
         tags = [...updated.tags];
         renderTags();
         render(updated);
-        $("asset-back").href = projectLink(project, updated.folderId);
         announce(`Saved ${updated.fileName}.`);
     });
 

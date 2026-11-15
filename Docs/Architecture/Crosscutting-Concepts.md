@@ -13,7 +13,6 @@ class User
 class ApiToken
 class Project
 class Membership
-class Folder
 class Asset
 class AssetVersion
 class Blob
@@ -24,10 +23,7 @@ class AuditEntry
 User *-- ApiToken : owns
 User -- Membership
 Project -- Membership : role
-Project *-- Folder
-Folder o-- Folder : parent
 Project *-- Asset
-Folder o-- Asset
 Asset *-- AssetVersion
 AssetVersion --> Blob : content
 Asset *-- Tag
@@ -40,7 +36,7 @@ AuditEntry ..> User
 - **Asset** is the unit behind a public link. Its ID never changes and is never reused.
 - **AssetVersion** is immutable. Replacing an asset adds a version; restoring copies an old version into a new one.
 - **Blob** is file content addressed by its SHA-256. Versions with identical content share a blob.
-- **Folder** and **Tag** are pure organization. Neither appears in a link.
+- **Tag** is pure organization: an asset can have several, and none appears in a link. Tags replaced folders ([ADR-0020](Architecture-Decisions/0020-Tags-Instead-of-Folders.md)).
 
 The table sketch is in section 8 of the [requirements](../Requirements.md#8-datenmodell-skizze).
 
@@ -99,9 +95,9 @@ Settings come from `appsettings.json` and `MDU_ASSETS_*` environment variables, 
 - Design tokens from MDU (`tokens.css`, unchanged copy checked against `tokens.pin.json`), light, dark and automatic mode with the MDU theme switch (stored as `mdu-theme`, restored before the first paint), MDU components: sticky glass header, sidebar, cards like tag cards, tables without vertical lines, one filled button for the main action.
 - Uploads: drop anywhere (an overlay names the target project), paste anywhere outside text fields (pasted images get `screenshot-<date>-<time>` and the alt text "Screenshot"), or the file picker. `XMLHttpRequest` reports progress per file. After the upload, the snippet is copied when the browser allows it; otherwise focus moves to its Copy button.
 - Snippets: Markdown, URL or HTML (choice remembered); file name and alt text are edited in place and saved on Enter or when leaving the field, one save at a time per card. Clear removes finished cards and keeps running uploads.
-- Organizing (ORG-01 – ORG-04): nested folders appear as a tree in the sidebar (a select on narrow screens) and as a path above the images. Uploads go into the open folder. Images move by dragging them onto a folder or by selecting them and choosing "Move to folder"; links never change. Deleting a folder moves its images and subfolders to the parent. Tags are free text, compared without case, with suggestions from the project. Search matches every word in file name, alt text, description or tags; filters cover tag, type, uploader, upload dates and subfolders. Text and tags compare without case for every alphabet: SQLite's own folding covers only A to Z, so search uses a lower-case function from .NET and tags store a lower-case key. Upload dates are days of the viewer's time zone; the interface sends the exact times (`fromTime`, `beforeTime`). Search and filters live in the address, so a filtered view can be shared.
+- Organizing (ORG-02 – ORG-04): the sidebar lists the project's tags with their use; each click adds or removes a tag from the filter, and an image must have every chosen tag. Active tags show as chips above the images; "Untagged" shows images without tags; on narrow screens "Add a tag" in the filters does the same. Uploads get the tags the list is filtered by. Images get tags by dragging them onto a tag or with "Tags…" on a selection; the ⋯ next to a tag renames, merges or deletes it in the whole project. Links never change. Tags are free text, compared without case, with suggestions from the project; a tag keeps the spelling the project already uses. Search matches every word in file name, alt text, description or tags; filters cover tags, type, uploader, upload dates and requests. Text and tags compare without case for every alphabet: SQLite's own folding covers only A to Z, so search uses a lower-case function from .NET and tags store a lower-case key. Upload dates are days of the viewer's time zone; the interface sends the exact times (`fromTime`, `beforeTime`). Search and filters live in the address, so a filtered view can be shared.
 - Keyboard in the grid (ORG-07): one image is in the tab order; arrow keys, Home and End move between images, Enter opens the details, C copies the Markdown snippet, Space selects.
-- Details (ORG-06): `?project=<slug>&asset=<id>` shows a large preview on a checkerboard, light or dark background, all snippets, description, tags, folder and the metadata (type, size, hash, uploader, date, version). Versions, statistics, referring pages and the light/dark partner join this page when they exist (M5 – M7).
+- Details (ORG-06): `?project=<slug>&asset=<id>` shows a large preview on a checkerboard, light or dark background, all snippets, description, tags and the metadata (type, size, hash, uploader, date, version). Versions, statistics, referring pages and the light/dark partner join this page when they exist (M5 – M7).
 - Finding an image by its link (LNK-09): pasting a public link into the search, with or without file name, size parameter or fragment, opens its details through `GET /api/v1/lookup`, if the caller may see the project.
 - Versions and trash (VER-01 – VER-04, DEL-01 – DEL-03): a file dropped or pasted on the details page, or chosen with "Replace image", becomes the next version under the same link; a format change is allowed and explained. The version list opens, restores (as a new version) or, for owners, deletes old versions. "Move to trash", the Delete key in the grid and the selection bar move images to the trash after a confirmation; the trash page restores them or, for owners, deletes them for good. `TrashCleanup` deletes trashed images after 30 days (`MDU_ASSETS_TRASHRETENTIONDAYS`); the row stays as a tombstone so ids are never reused, and `BlobCleanup` removes blobs and variants no version uses any more. Destructive dialogs start with the focus on Cancel.
 - Statistics (STA-01 – STA-06): `UsageCounter` counts finished public GET requests with 200 or 304 in memory and writes them every 10 seconds (`MDU_ASSETS_STATSFLUSHSECONDS`) and when the server stops. HEAD, known bots (`MDU_ASSETS_BOTUSERAGENTS`) and requests whose `Referer` is the web interface are not counted; widths, formats and version links count as the image. Per asset only the count and the last request are kept, and per referring page its origin, path, count and last request, at most 100 per asset. No IP addresses or user agents are stored. The grid, list and details show the numbers with their limits explained; the filter "Requests" finds images never requested or not in 30, 90 or 365 days (`?unused=`), and moving an image requested in the last 30 days to the trash names its counts and referring pages first (DEL-01).
