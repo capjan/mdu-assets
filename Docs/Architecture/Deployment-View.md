@@ -51,6 +51,8 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 | `MDU_ASSETS_MAXUPLOADBYTES` | `20971520` (20 MB) | Largest upload |
 | `MDU_ASSETS_MAXPIXELS` | `50000000` | Largest image in pixels, checked before decoding |
 | `MDU_ASSETS_PUBLICMAXAGESECONDS`, `MDU_ASSETS_PUBLICSTALEWHILEREVALIDATESECONDS` | `300`, `86400` | Caching of public links |
+| `MDU_ASSETS_STATSFLUSHSECONDS` | `10` | How often counted requests are written to the database |
+| `MDU_ASSETS_BOTUSERAGENTS` | `bot,crawl,spider,…` | Comma-separated parts of user agents whose requests are not counted |
 | `MDU_ASSETS_TRASHRETENTIONDAYS` | `30` | Days an asset stays in the trash before it is deleted for good |
 | `MDU_ASSETS_WIDTHS` | `320,640,800,1024,1280,1600,2048` | Widths `?w=` may ask for; others snap to the next larger one |
 | `MDU_ASSETS_THUMBNAILSIZE` | `480` | Longer side of previews in the web interface |

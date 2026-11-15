@@ -67,6 +67,8 @@ public sealed class ServerSettings
             throw new StartupException("MDU_ASSETS_MAXPIXELS must be greater than 0.");
         if (options.ThumbnailSize is < 64 or > 2048)
             throw new StartupException("MDU_ASSETS_THUMBNAILSIZE must be between 64 and 2048.");
+        if (options.StatsFlushSeconds is < 1 or > 3600)
+            throw new StartupException("MDU_ASSETS_STATSFLUSHSECONDS must be between 1 and 3600.");
         if (options.TrashRetentionDays < 1)
             throw new StartupException("MDU_ASSETS_TRASHRETENTIONDAYS must be at least 1.");
         if (options.AvifWorkers < 0)

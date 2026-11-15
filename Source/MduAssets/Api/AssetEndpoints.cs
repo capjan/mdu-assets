@@ -37,6 +37,7 @@ public static class AssetEndpoints
         api.MapPatch("/assets/{id}", Update);
         api.MapGet("/lookup", Lookup);
         api.MapGet("/assets/{id}/thumbnail", Thumbnail);
+        api.MapGet("/assets/{id}/referrers", Referrers);
         api.MapPut("/assets/{id}/pair", SetPair);
         api.MapDelete("/assets/{id}/pair", ClearPair);
     }
@@ -50,7 +51,7 @@ public static class AssetEndpoints
     /// </summary>
     private static Results<Ok<AssetList>, ProblemHttpResult> List(
         string project, int? limit, string? after, string? q, string? folder, bool? subfolders, string? tag, string? type,
-        string? from, string? to, string? fromTime, string? beforeTime, string? uploader,
+        string? from, string? to, string? fromTime, string? beforeTime, string? uploader, int? unused,
         ClaimsPrincipal user, ProjectAccess access, AssetStore assets, FolderStore folders, ServerSettings settings)
     {
         if (!access.TryGet(user, project, ProjectRole.Viewer, out var target, out var problem))
@@ -79,7 +80,10 @@ public static class AssetEndpoints
         if (!TryParseTime(fromTime, out var startTime) || !TryParseTime(beforeTime, out var endTime))
             return Invalid("Invalid time", "Times are ISO 8601 with an offset, for example 2026-11-14T00:00:00+01:00.");
 
-        var query = new AssetQuery(q, folderIds, unfiled, tag, contentType, Later(start, startTime), Earlier(end?.AddDays(1), endTime), uploader);
+        if (unused is < 0 or > 3650)
+            return Invalid("Invalid filter", "unused is 0 for never requested, or a number of days up to 3650.");
+
+        var query = new AssetQuery(q, folderIds, unfiled, tag, contentType, Later(start, startTime), Earlier(end?.AddDays(1), endTime), uploader, unused);
         var page = assets.List(target.Id, size, after, query);
         var items = page.Take(size).Select(a => AssetResponse.From(a, settings)).ToList();
         return TypedResults.Ok(new AssetList(items, page.Count > size ? items[^1].Id : null));
@@ -212,6 +216,16 @@ public static class AssetEndpoints
 
         context.Response.Headers.CacheControl = "private, max-age=31536000, immutable";
         return TypedResults.PhysicalFile(path, "image/webp", entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{asset.BlobSha256[..32]}-thumb\""));
+    }
+
+    /// <summary>The pages that showed an image (STA-04).</summary>
+    private static Results<Ok<ReferrerList>, ProblemHttpResult> Referrers(string id, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, StatsStore stats)
+    {
+        if (!AssetId.IsValid(id) || assets.FindCurrent(id) is not { } asset)
+            return ProjectAccess.UnknownAsset(id);
+        if (access.CheckAsset(user, asset, ProjectRole.Viewer) is { } problem)
+            return problem;
+        return TypedResults.Ok(new ReferrerList(stats.Referrers(asset.Id).Select(r => new ReferrerResponse(r.Origin, r.Path, r.Count, r.LastHit)).ToList()));
     }
 
     /// <summary>Links an asset and another one of its project as light and dark variant (LNK-06).</summary>

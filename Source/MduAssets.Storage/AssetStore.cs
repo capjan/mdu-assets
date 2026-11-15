@@ -25,7 +25,9 @@ public sealed record AssetFile(
     string? PairId = null,
     string? PairRole = null,
     string? PairFileName = null,
-    DateTimeOffset? DeletedAt = null);
+    DateTimeOffset? DeletedAt = null,
+    long Requests = 0,
+    DateTimeOffset? LastRequestAt = null);
 
 /// <summary>What public delivery needs to serve an asset, read without joins on the hot path.</summary>
 public sealed record DeliveryFile(string BlobSha256, string ContentType, DateTimeOffset CreatedAt, int? Width, bool Animated, bool ConvertFormats);
@@ -72,7 +74,9 @@ public sealed record AssetQuery(
     string? ContentType = null,
     DateTimeOffset? From = null,
     DateTimeOffset? Before = null,
-    string? UploadedBy = null);
+    string? UploadedBy = null,
+    int? NotRequestedForDays = null,
+    DateTimeOffset? Now = null);
 
 public sealed record TagCount(string Name, int Count);
 
@@ -225,6 +229,18 @@ public sealed class AssetStore(Database database)
         {
             sql.Append(" AND a.created_at < $before");
             command.Parameters.AddWithValue("$before", Clock.Format(before));
+        }
+
+        // Unused images (ORG-04): 0 days means never requested; otherwise no request within that many days.
+        if (query.NotRequestedForDays is { } days)
+        {
+            if (days == 0)
+                sql.Append(" AND s.hit_count IS NULL");
+            else
+            {
+                sql.Append(" AND (s.last_hit_at IS NULL OR s.last_hit_at < $unusedSince)");
+                command.Parameters.AddWithValue("$unusedSince", Clock.Format((query.Now ?? DateTimeOffset.UtcNow).AddDays(-days)));
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(query.UploadedBy))
@@ -414,7 +430,7 @@ public sealed class AssetStore(Database database)
         while (reader.Read())
         {
             var asset = ReadAsset(reader);
-            assets.Add(new TrashedAsset(asset, asset.DeletedAt!.Value, reader.IsDBNull(21) ? null : reader.GetString(21)));
+            assets.Add(new TrashedAsset(asset, asset.DeletedAt!.Value, reader.IsDBNull(23) ? null : reader.GetString(23)));
         }
 
         return assets;
@@ -466,6 +482,7 @@ public sealed class AssetStore(Database database)
             mark.Transaction = transaction;
             mark.CommandText = """
                 DELETE FROM tags WHERE asset_id = $id;
+                DELETE FROM asset_referrers WHERE asset_id = $id;
                 UPDATE assets SET purged_at = $now, folder_id = NULL WHERE id = $id AND deleted_at IS NOT NULL;
                 """;
             mark.Parameters.AddWithValue("$id", id);
@@ -671,12 +688,13 @@ public sealed class AssetStore(Database database)
         SELECT a.id, a.project_id, p.slug, a.folder_id, a.file_name, a.alt_text, a.description,
                (SELECT group_concat(t.name, char(31)) FROM (SELECT name FROM tags WHERE asset_id = a.id ORDER BY key) t),
                v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, u.name, v.created_at,
-               v.animated, a.pair_asset_id, a.pair_role, pa.file_name, a.deleted_at
+               v.animated, a.pair_asset_id, a.pair_role, pa.file_name, s.hit_count, s.last_hit_at, a.deleted_at
         FROM assets a
         JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
         JOIN projects p ON p.id = a.project_id
         JOIN users u ON u.id = a.created_by
         LEFT JOIN assets pa ON pa.id = a.pair_asset_id
+        LEFT JOIN asset_stats s ON s.asset_id = a.id
         """;
 
     private static AssetFile ReadAsset(SqliteDataReader reader) =>
@@ -694,5 +712,7 @@ public sealed class AssetStore(Database database)
             reader.IsDBNull(17) ? null : reader.GetString(17),
             reader.IsDBNull(18) ? null : reader.GetString(18),
             reader.IsDBNull(19) ? null : reader.GetString(19),
-            reader.IsDBNull(20) ? null : Clock.Parse(reader.GetString(20)));
+            reader.IsDBNull(22) ? null : Clock.Parse(reader.GetString(22)),
+            reader.IsDBNull(20) ? 0 : reader.GetInt64(20),
+            reader.IsDBNull(21) ? null : Clock.Parse(reader.GetString(21)));
 }

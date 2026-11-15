@@ -193,3 +193,23 @@ export function folderPath(folders, id) {
     for (let folder = byId.get(id); folder; folder = byId.get(folder.parentId)) path.unshift(folder);
     return path;
 }
+
+/**
+ * Says which images were requested in the last 30 days, with counts and referring pages (DEL-01), so nobody moves an image
+ * to the trash that documentation still shows. Empty when none of them was requested lately.
+ */
+export async function recentUse(assets) {
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const recent = assets.filter((asset) => asset.lastRequestAt && Date.parse(asset.lastRequestAt) > cutoff);
+    if (recent.length === 0) return "";
+    const lines = await Promise.all(recent.slice(0, 5).map(async (asset) => {
+        let where = "";
+        try {
+            const referrers = (await request(`/assets/${encodeURIComponent(asset.id)}/referrers`)).items;
+            const shown = referrers.slice(0, 3).map((r) => `${r.origin.replace(/^https?:\/\//, "")}${r.path === "/" ? "" : r.path}`);
+            if (shown.length) where = ` on ${shown.join(", ")}${referrers.length > 3 ? ` and ${referrers.length - 3} more pages` : ""}`;
+        } catch { }
+        return `${asset.fileName} was requested ${plural(asset.requests, "time", "times")}, last on ${dateFormat.format(new Date(asset.lastRequestAt))}${where}.`;
+    }));
+    return `Still in use: ${lines.join(" ")}${recent.length > 5 ? ` ${plural(recent.length - 5, "more image was", "more images were")} requested lately.` : ""}`;
+}

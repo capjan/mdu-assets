@@ -45,6 +45,13 @@ public sealed class ServerOptions
     /// <summary>How many image jobs (cleaning, previews, resizing, conversion) run at the same time; 0 means half the processors.</summary>
     public int ImageJobs { get; set; }
 
+    /// <summary>How often counted requests are written to the database, in seconds (STA-05).</summary>
+    public int StatsFlushSeconds { get; set; } = 10;
+
+    /// <summary>Comma-separated parts of user agents that are not counted (STA-03).</summary>
+    public string BotUserAgents { get; set; } =
+        "bot,crawl,spider,slurp,facebookexternalhit,preview,embedly,headless,lighthouse,pingdom,uptime,monitor,python-requests,wget";
+
     /// <summary>How long deleted assets stay in the trash before they are deleted for good, in days (DEL-02).</summary>
     public int TrashRetentionDays { get; set; } = 30;
 
