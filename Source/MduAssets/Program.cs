@@ -78,8 +78,6 @@ builder.Services.AddSingleton<AssetStore>();
 builder.Services.AddSingleton<FolderStore>();
 builder.Services.AddSingleton<VariantStore>();
 builder.Services.AddSingleton<ImageJobs>();
-builder.Services.AddSingleton<AvifQueue>();
-builder.Services.AddHostedService(services => services.GetRequiredService<AvifQueue>());
 builder.Services.AddSingleton<Variants>();
 builder.Services.AddSingleton<StatsStore>();
 builder.Services.AddSingleton<UsageCounter>();
@@ -173,7 +171,7 @@ ui.MapGet("/ui/{**path}", (string path, UiFiles files, HttpContext context) => f
 if (createdAdmin is not null)
     app.Logger.LogInformation("Created the first administrator {Admin}", createdAdmin);
 app.Logger.LogInformation("Data directory: {DataDirectory}", dataDirectory.Root);
-app.Logger.LogInformation("libvips {Version}, {Jobs} image jobs at a time, {Workers} AVIF workers", ImageProcessor.Version, settings.ImageJobs, settings.Options.AvifWorkers);
+app.Logger.LogInformation("libvips {Version}, {Jobs} image jobs at a time", ImageProcessor.Version, settings.ImageJobs);
 app.Logger.LogInformation("Web interface and API: {UiBaseUrl}, public links: {PublicBaseUrl}", settings.UiBaseUrl, settings.PublicBaseUrl);
 app.Run();
 return 0;

@@ -12,7 +12,7 @@ public sealed class UploadTest : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    private readonly TestServer _server = new(new() { ["MaxUploadBytes"] = "200000", ["MaxPixels"] = "1000000" });
+    private readonly TestServer _server = new TestServer(new() { ["MaxUploadBytes"] = "200000", ["MaxPixels"] = "1000000" }).KeepUploadedFormats();
 
     public void Dispose() => _server.Dispose();
 

@@ -19,7 +19,10 @@ public sealed record ExportAsset(
     string Id, long? FolderId, string FileName, string AltText, string Description, IReadOnlyList<string> Tags,
     string? PairId, string? PairRole, string UploadedBy, DateTimeOffset CreatedAt, int CurrentVersion, IReadOnlyList<ExportVersion> Versions);
 
-public sealed record ExportVersion(int Number, string Sha256, string ContentType, long Size, int? Width, int? Height, bool Animated, string CreatedBy, DateTimeOffset CreatedAt);
+/// <summary>One version in an export; <c>OriginalSha256</c> names the kept upload of a converted version (UP-11), also under <c>files/</c>.</summary>
+public sealed record ExportVersion(
+    int Number, string Sha256, string ContentType, long Size, int? Width, int? Height, bool Animated, string CreatedBy, DateTimeOffset CreatedAt,
+    string? OriginalSha256 = null);
 
 /// <summary>An asset that got a new id on import, because its id was already used on this instance (ADR-0018).</summary>
 public sealed record IdChange(string OldId, string NewId);
@@ -56,9 +59,11 @@ public static class TransferEndpoints
         {
             var kept = assets.Versions(asset.Id).Where(v => all || v.Number == asset.Version).OrderBy(v => v.Number).ToList();
             files.UnionWith(kept.Select(v => v.BlobSha256));
+            files.UnionWith(kept.Where(v => v.Original is not null).Select(v => v.Original!.BlobSha256));
             exported.Add(new ExportAsset(asset.Id, asset.FolderId, asset.FileName, asset.AltText, asset.Description, asset.Tags,
                 asset.PairId, asset.PairRole, asset.UploadedBy, asset.CreatedAt, asset.Version,
-                kept.Select(v => new ExportVersion(v.Number, v.BlobSha256, v.ContentType, v.Size, v.Width, v.Height, v.Animated, v.CreatedBy, v.CreatedAt)).ToList()));
+                kept.Select(v => new ExportVersion(v.Number, v.BlobSha256, v.ContentType, v.Size, v.Width, v.Height, v.Animated, v.CreatedBy, v.CreatedAt,
+                    v.Original?.BlobSha256)).ToList()));
         }
 
         var manifest = new ExportManifest(Format, DateTimeOffset.UtcNow, all,
@@ -144,7 +149,8 @@ public static class TransferEndpoints
 
         // First every file is checked and stored, as on upload, so a bad export fails before the project exists.
         var stored = new Dictionary<string, (string Hash, ImageInfo Info, long Size)>(StringComparer.Ordinal);
-        foreach (var hash in manifest.Assets.SelectMany(a => a.Versions).Select(v => v.Sha256).Distinct(StringComparer.Ordinal))
+        var hashes = manifest.Assets.SelectMany(a => a.Versions).SelectMany(v => v.OriginalSha256 is { } original ? [v.Sha256, original] : new[] { v.Sha256 });
+        foreach (var hash in hashes.Distinct(StringComparer.Ordinal))
         {
             var entry = zip.GetEntry($"files/{hash}") ?? throw new InvalidDataException($"The zip has no files/{hash}.");
             if (entry.Length > settings.Options.MaxUploadBytes)
@@ -195,7 +201,13 @@ public static class TransferEndpoints
             var versions = asset.Versions.Select(v =>
             {
                 var file = stored[v.Sha256];
-                return new ImportedVersion(v.Number, file.Hash, file.Info.ContentType, file.Size, file.Info.Width, file.Info.Height, v.Animated, v.CreatedAt);
+                VersionOriginal? original = null;
+                if (v.OriginalSha256 is { } originalHash)
+                {
+                    var kept = stored[originalHash];
+                    original = new VersionOriginal(kept.Hash, kept.Info.ContentType, kept.Size);
+                }
+                return new ImportedVersion(v.Number, file.Hash, file.Info.ContentType, file.Size, file.Info.Width, file.Info.Height, v.Animated, v.CreatedAt, original);
             }).ToList();
             var current = versions.Any(v => v.Number == asset.CurrentVersion) ? asset.CurrentVersion : versions.Max(v => v.Number);
             ids[asset.Id] = assets.Import(asset.Id, new ImportedAsset(project.Id,

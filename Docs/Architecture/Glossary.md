@@ -15,9 +15,10 @@ description: Terms used in the architecture documentation of the MDU Asset Serve
 | Light/dark pair | Two assets linked as the light and dark variant of the same picture; their snippet uses `#only-light` and `#only-dark`. |
 | MDU | Markdown Documentation Utility, the `mdu` .NET tool that renders Markdown to static sites. |
 | Native AOT | Ahead-of-time compilation of .NET code to a native program without a JIT. |
+| Original | The cleaned upload a version was converted from (UP-11); kept for exports and later conversions, never served publicly. |
 | Project | Container for assets and folders with its own members and roles. |
 | Public host | Host name that serves only public links `/i/…`. |
 | Snippet | Ready-to-paste text for an asset, such as a Markdown image with alt text. |
 | UI host | Host name that serves the web interface and the API. |
-| Variant | A derived file of a version, for example 800 px wide or AVIF; cached and re-creatable. |
+| Variant | A derived file of a version, for example 800 px wide or the preview; cached and re-creatable. |
 | Version | One immutable content of an asset. |

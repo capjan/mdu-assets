@@ -6,7 +6,6 @@ namespace MduAssets.Storage;
 /// </summary>
 public sealed class VariantStore(DataDirectory dataDirectory)
 {
-    private const string LargerSuffix = ".larger";
 
     public string PathOf(string blobSha256, string name) =>
         Path.Combine(dataDirectory.VariantsPath, blobSha256[..2], blobSha256[2..4], blobSha256, name);
@@ -28,16 +27,6 @@ public sealed class VariantStore(DataDirectory dataDirectory)
         File.Move(temp, path, overwrite: true);
         return path;
     }
-
-    /// <summary>Remembers that a converted variant would be larger than its source, so it is not tried again.</summary>
-    public void MarkLarger(string blobSha256, string name)
-    {
-        var path = PathOf(blobSha256, name) + LargerSuffix;
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, []);
-    }
-
-    public bool IsLarger(string blobSha256, string name) => File.Exists(PathOf(blobSha256, name) + LargerSuffix);
 
     /// <summary>Removes all variants of a blob, when the blob itself goes.</summary>
     public void DeleteAll(string blobSha256)

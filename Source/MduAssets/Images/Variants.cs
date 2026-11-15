@@ -5,14 +5,15 @@ using MduAssets.Storage;
 
 namespace MduAssets.Images;
 
-/// <summary>A file to serve: its path, type, a tag that changes with the content, and whether the type depended on <c>Accept</c>.</summary>
-public sealed record ServedFile(string Path, string ContentType, string ETag, bool VaryByAccept);
+/// <summary>A file to serve: its path, type and a tag that changes with the content.</summary>
+public sealed record ServedFile(string Path, string ContentType, string ETag);
 
 /// <summary>
-/// Previews (DLV-06), smaller widths (DLV-03) and WebP or AVIF copies (DLV-04) of a blob, created on first use and kept in the
-/// variant cache. Requests for the same missing variant wait for one job instead of starting several.
+/// Previews (DLV-06) and smaller widths (DLV-03) of a blob, created on first use and kept in the variant cache. Requests for the
+/// same missing variant wait for one job instead of starting several. The format was decided on upload (UP-11), so every
+/// request for a link gets the same type, whatever the browser accepts.
 /// </summary>
-public sealed class Variants(VariantStore store, BlobStore blobs, ImageJobs jobs, AvifQueue avif, ServerSettings settings, ILogger<Variants> logger)
+public sealed class Variants(VariantStore store, BlobStore blobs, ImageJobs jobs, ServerSettings settings, ILogger<Variants> logger)
 {
     private readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _running = new(StringComparer.Ordinal);
 
@@ -27,12 +28,8 @@ public sealed class Variants(VariantStore store, BlobStore blobs, ImageJobs jobs
         });
     }
 
-    /// <summary>
-    /// Picks what a public request gets: the original or a smaller width, as AVIF or WebP when the browser accepts it, the
-    /// project allows it and the copy is smaller. AVIF copies come from the background queue; until one exists, WebP is
-    /// created right away (about a fifth of a second) or the original is served.
-    /// </summary>
-    public async Task<ServedFile> ResolveAsync(DeliveryFile file, int? requestedWidth, string accept, CancellationToken cancellationToken = default)
+    /// <summary>Picks what a public request gets: the stored file, or a smaller width in the same format (BMP becomes PNG).</summary>
+    public async Task<ServedFile> ResolveAsync(DeliveryFile file, int? requestedWidth, CancellationToken cancellationToken = default)
     {
         var sha = file.BlobSha256;
         var path = blobs.PathOf(sha);
@@ -54,44 +51,7 @@ public sealed class Variants(VariantStore store, BlobStore blobs, ImageJobs jobs
                 (path, type, key) = (resized, resizedType, $"w{width.ToString(CultureInfo.InvariantCulture)}");
         }
 
-        // Animated images, SVG and GIF keep their format; AVIF originals are already the smallest format offered.
-        var convertible = file.ConvertFormats && !file.Animated && type is "image/png" or "image/jpeg" or "image/bmp" or "image/webp";
-        if (!convertible)
-            return new ServedFile(path, type, ETag(sha, key, type), VaryByAccept: false);
-
-        if (accept.Contains("image/avif", StringComparison.OrdinalIgnoreCase))
-        {
-            var name = $"{key}.avif";
-            if (store.Find(sha, name) is { } ready)
-                return new ServedFile(ready, "image/avif", ETag(sha, key, "image/avif"), VaryByAccept: true);
-            if (!store.IsLarger(sha, name))
-                avif.Enqueue(sha, name, path);
-        }
-
-        if (type != "image/webp" && accept.Contains("image/webp", StringComparison.OrdinalIgnoreCase))
-        {
-            var name = $"{key}.webp";
-            var webp = store.IsLarger(sha, name) ? null : store.Find(sha, name) ?? await Once(sha, name, async () =>
-            {
-                var source = path;
-                var image = await jobs.RunAsync(() => ImageProcessor.Convert(source, "image/webp"));
-                if (image.Content.Length < new FileInfo(source).Length)
-                    return store.Put(sha, name, image.Content);
-                store.MarkLarger(sha, name);
-                return null;
-            });
-            if (webp is not null)
-                return new ServedFile(webp, "image/webp", ETag(sha, key, "image/webp"), VaryByAccept: true);
-        }
-
-        return new ServedFile(path, type, ETag(sha, key, type), VaryByAccept: true);
-    }
-
-    /// <summary>Queues the AVIF copy of the full image after an upload, so it is ready before the first reader comes.</summary>
-    public void PrepareAvif(string blobSha256, string contentType, bool animated)
-    {
-        if (!animated && contentType is "image/png" or "image/jpeg" or "image/bmp" or "image/webp")
-            avif.Enqueue(blobSha256, "full.avif", blobs.PathOf(blobSha256));
+        return new ServedFile(path, type, ETag(sha, key, type));
     }
 
     /// <remarks>Jobs ignore the request's cancellation: other requests may be waiting for the same variant.</remarks>

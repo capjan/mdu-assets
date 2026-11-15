@@ -5,7 +5,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace MduAssets.Api;
 
-/// <summary>What the API returns for an asset (API-05).</summary>
+/// <summary>
+/// What the API returns for an asset (API-05). <c>OriginalContentType</c> and <c>OriginalSize</c> describe the upload when it was
+/// converted to WebP (UP-11); the original is kept but not served.
+/// </summary>
 public sealed record AssetResponse(
     string Id,
     string Project,
@@ -31,7 +34,9 @@ public sealed record AssetResponse(
     string VersionUrl,
     DateTimeOffset? DeletedAt,
     long Requests,
-    DateTimeOffset? LastRequestAt)
+    DateTimeOffset? LastRequestAt,
+    string? OriginalContentType = null,
+    long? OriginalSize = null)
 {
     public static AssetResponse From(AssetFile asset, ServerSettings settings)
     {
@@ -50,12 +55,15 @@ public sealed record AssetResponse(
             Snippets.Markdown(asset.AltText, url), Snippets.Html(asset.AltText, url, asset.Width, asset.Height),
             asset.Width, asset.Height, asset.Size, asset.ContentType, asset.BlobSha256, asset.Version, asset.UploadedBy, asset.CreatedAt,
             $"/api/v1/assets/{asset.Id}/thumbnail?v={asset.BlobSha256[..12]}", asset.Animated, pair,
-            settings.PublicLink(asset.Id, asset.FileName, asset.Version), asset.DeletedAt, asset.Requests, asset.LastRequestAt);
+            settings.PublicLink(asset.Id, asset.FileName, asset.Version), asset.DeletedAt, asset.Requests, asset.LastRequestAt,
+            asset.Original?.ContentType, asset.Original?.Size);
     }
 }
 
 /// <summary>One version of an asset (VER-03); <c>Url</c> is its version link, which never changes (DLV-02).</summary>
-public sealed record VersionResponse(int Number, string Url, string ContentType, long Size, int? Width, int? Height, string CreatedBy, DateTimeOffset CreatedAt, bool IsCurrent);
+public sealed record VersionResponse(
+    int Number, string Url, string ContentType, long Size, int? Width, int? Height, string CreatedBy, DateTimeOffset CreatedAt, bool IsCurrent,
+    string? OriginalContentType = null, long? OriginalSize = null);
 
 public sealed record VersionList(IReadOnlyList<VersionResponse> Items);
 

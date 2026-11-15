@@ -11,8 +11,8 @@ namespace MduAssets.Delivery;
 /// <summary>
 /// Serves <c>/i/{id}</c>, <c>/i/{id}/{name}</c> and version links <c>/i/{id}/v{n}/{name}</c> on the public host
 /// (LNK-01, LNK-02, DLV-01 – DLV-05, DLV-07, DLV-08). Only the id and the version are used for the lookup; the name is
-/// decoration, so renamed assets keep working under old links. <c>?w=</c> asks for a smaller width, and the <c>Accept</c>
-/// header may get WebP or AVIF instead of the original. Assets in the trash, or deleted for good, answer 410 Gone.
+/// decoration, so renamed assets keep working under old links. <c>?w=</c> asks for a smaller width in the stored format, which
+/// was chosen on upload (UP-11). Assets in the trash, or deleted for good, answer 410 Gone.
 /// </summary>
 public static partial class PublicLinks
 {
@@ -69,15 +69,13 @@ public static partial class PublicLinks
             width = requested;
         }
 
-        var file = await variants.ResolveAsync(asset, width, context.Request.Headers.Accept.ToString(), context.RequestAborted);
+        var file = await variants.ResolveAsync(asset, width, context.RequestAborted);
 
         var headers = context.Response.Headers;
         headers.CacheControl = version is not null
             ? "public, max-age=31536000, immutable"
             : $"public, max-age={settings.Options.PublicMaxAgeSeconds}, stale-while-revalidate={settings.Options.PublicStaleWhileRevalidateSeconds}";
         headers["Cross-Origin-Resource-Policy"] = "cross-origin";
-        if (file.VaryByAccept)
-            headers.Vary = "Accept";
         if (file.ContentType == "image/svg+xml")
             headers.ContentSecurityPolicy = SvgPolicy;
 

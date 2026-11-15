@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using MduAssets.Api;
-using MduAssets.Images;
 using MduAssets.Imaging.Test;
 using MduAssets.Security;
 using MduAssets.Storage;
@@ -11,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace MduAssets.Test;
 
-/// <summary>Metadata removal, previews, widths, WebP and AVIF, light and dark pairs and duplicates (M5).</summary>
+/// <summary>Metadata removal, the format chosen on upload, previews, widths, light and dark pairs and duplicates (M5, UP-11).</summary>
 public sealed class ImageProcessingTest : IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -57,6 +56,7 @@ public sealed class ImageProcessingTest : IDisposable
 
         var stored = await (await Fetch(asset.Url)).Content.ReadAsByteArrayAsync(Cancel);
 
+        Assert.Equal("image/webp", asset.ContentType);
         Assert.Equal((90, 160), (asset.Width, asset.Height));
         Assert.Equal((90, 160, 1), SampleImages.Measure(stored));
         Assert.DoesNotContain(SampleImages.Fields(stored), f => f.StartsWith("exif", StringComparison.Ordinal));
@@ -65,10 +65,146 @@ public sealed class ImageProcessingTest : IDisposable
     [Fact]
     public async Task KeepsImagesWithoutMetadataUnchanged()
     {
+        await TurnConversion(on: false);
         var png = SampleImages.Png(200, 100);
         var asset = await Upload(png, "clean.png");
 
         Assert.Equal(png, await (await Fetch(asset.Url)).Content.ReadAsByteArrayAsync(Cancel));
+    }
+
+    private async Task TurnConversion(bool on)
+    {
+        var response = await _admin.PatchAsJsonAsync("/api/v1/projects/default", new ProjectChanges(null, null, ConvertFormats: on), Json, Cancel);
+        Assert.Equal(on, (await response.Content.ReadFromJsonAsync<ProjectResponse>(Json, Cancel))!.ConvertFormats);
+    }
+
+    private byte[] Blob(string sha256) => File.ReadAllBytes(_server.Services.GetRequiredService<BlobStore>().PathOf(sha256));
+
+    private static bool SamePixels(byte[] first, byte[] second)
+    {
+        using var a = NetVips.Image.NewFromBuffer(first);
+        using var b = NetVips.Image.NewFromBuffer(second);
+        using var difference = (a - b).Abs();
+        return (a.Width, a.Height, a.Bands) == (b.Width, b.Height, b.Bands) && difference.Max() == 0;
+    }
+
+    [Fact]
+    public async Task StoresGraphicsAsLosslessWebPAndKeepsTheOriginal()
+    {
+        var png = SampleImages.Png(800, 400);
+        var asset = await Upload(png, "diagram.png");
+
+        var response = await Fetch(asset.Url, "image/png,*/*;q=0.1");
+        var served = await response.Content.ReadAsByteArrayAsync(Cancel);
+
+        Assert.Equal(("diagram.webp", "image/webp", "image/png", (long)png.Length), (asset.FileName, asset.ContentType, asset.OriginalContentType, asset.OriginalSize));
+        Assert.EndsWith("/diagram.webp", asset.Url, StringComparison.Ordinal);
+        Assert.True(asset.Size < png.Length);
+        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
+        Assert.Empty(response.Headers.Vary);
+        Assert.True(SamePixels(png, served));
+
+        var version = (await _admin.GetFromJsonAsync<VersionList>($"/api/v1/assets/{asset.Id}/versions", Json, Cancel))!.Items.Single();
+        Assert.Equal(("image/png", (long)png.Length), (version.OriginalContentType, version.OriginalSize));
+        Assert.Equal(HttpStatusCode.OK, (await Fetch(asset.Url.Replace(".webp", ".png", StringComparison.Ordinal))).StatusCode);
+    }
+
+    [Fact]
+    public async Task StoresPhotosAsLossyWebP()
+    {
+        var jpeg = SampleImages.Jpeg(1200, 800);
+        var asset = await Upload(jpeg, "beach.jpg", "image/jpeg");
+
+        Assert.Equal(("beach.webp", "image/webp", "image/jpeg"), (asset.FileName, asset.ContentType, asset.OriginalContentType));
+        Assert.True(asset.Size < jpeg.Length);
+        Assert.Equal((1200, 800, 1), SampleImages.Measure(await (await Fetch(asset.Url)).Content.ReadAsByteArrayAsync(Cancel)));
+    }
+
+    [Fact]
+    public async Task KeepsFormatsThatNeedNoConversion()
+    {
+        var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"><rect width=\"10\" height=\"10\"/></svg>"u8.ToArray();
+
+        var vector = await Upload(svg, "icon.svg", "image/svg+xml");
+        var animation = await Upload(SampleImages.AnimatedGif(100, 50, 2), "spinner.gif", "image/gif");
+
+        Assert.Equal(("icon.svg", null), (vector.FileName, vector.OriginalContentType));
+        Assert.Equal(("spinner.gif", "image/gif", null), (animation.FileName, animation.ContentType, animation.OriginalContentType));
+    }
+
+    [Fact]
+    public void KeepsTheFormatWhenWebPIsNotSmaller()
+    {
+        var png = SampleImages.Png(50, 50);
+        var info = Imaging.ImageDetector.DetectRaster(png)!;
+
+        Assert.NotNull(Imaging.ImageProcessor.ToWebP(png, info, animated: false, currentSize: png.Length));
+        Assert.Null(Imaging.ImageProcessor.ToWebP(png, info, animated: false, currentSize: 10));
+        Assert.Null(Imaging.ImageProcessor.ToWebP(png, info, animated: true, currentSize: png.Length));
+    }
+
+    [Fact]
+    public async Task RenamesTheAssetWhenANewVersionChangesTheFormat()
+    {
+        await TurnConversion(on: false);
+        var asset = await Upload(SampleImages.Png(400, 200), "chart.png");
+        await TurnConversion(on: true);
+
+        var content = new ByteArrayContent(SampleImages.Png(401, 200));
+        content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        var response = await _admin.PostAsync($"/api/v1/assets/{asset.Id}/versions", content, Cancel);
+        var added = (await response.Content.ReadFromJsonAsync<VersionAdded>(Json, Cancel))!;
+        var versions = (await _admin.GetFromJsonAsync<VersionList>($"/api/v1/assets/{asset.Id}/versions", Json, Cancel))!.Items;
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.True(added.FormatChanged);
+        Assert.Equal(("chart.webp", "image/webp"), (added.Asset.FileName, added.Asset.ContentType));
+        Assert.Equal(["/v2/chart.webp", "/v1/chart.png"], versions.Select(v => v.Url[v.Url.LastIndexOf("/v", StringComparison.Ordinal)..]));
+        Assert.Equal("image/webp", (await Fetch(asset.Url)).Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task RemovesTheOriginalWithItsVersion()
+    {
+        var asset = await Upload(SampleImages.Png(300, 300), "gone.png");
+        var original = (await _admin.GetFromJsonAsync<VersionList>($"/api/v1/assets/{asset.Id}/versions", Json, Cancel))!.Items.Single();
+        var store = _server.Services.GetRequiredService<AssetStore>();
+        var originalHash = store.Versions(asset.Id).Single().Original!.BlobSha256;
+        var blobs = _server.Services.GetRequiredService<BlobStore>();
+        Assert.True(File.Exists(blobs.PathOf(originalHash)));
+
+        await _admin.DeleteAsync($"/api/v1/assets/{asset.Id}", Cancel);
+        await _admin.DeleteAsync($"/api/v1/projects/default/trash/{asset.Id}", Cancel);
+
+        Assert.NotNull(original.OriginalSize);
+        Assert.False(File.Exists(blobs.PathOf(originalHash)));
+        Assert.False(File.Exists(blobs.PathOf(asset.Sha256)));
+    }
+
+    [Fact]
+    public async Task CountsTheOriginalAgainstTheQuota()
+    {
+        var asset = await Upload(SampleImages.Png(300, 200), "big.png");
+
+        var project = (await _admin.GetFromJsonAsync<ProjectList>("/api/v1/projects", Json, Cancel))!.Items.Single(p => p.Slug == "default");
+
+        Assert.Equal(asset.Size + asset.OriginalSize, project.UsedBytes);
+    }
+
+    [Fact]
+    public async Task ExportsAndImportsTheOriginal()
+    {
+        var png = SampleImages.Png(320, 160);
+        var asset = await Upload(png, "moved.png");
+
+        var export = await _admin.GetByteArrayAsync("/api/v1/projects/default/export", Cancel);
+        var imported = await _admin.PostAsync("/api/v1/projects/import?slug=copy", new ByteArrayContent(export), Cancel);
+        Assert.Equal(HttpStatusCode.Created, imported.StatusCode);
+
+        var copy = (await _admin.GetFromJsonAsync<AssetList>("/api/v1/projects/copy/assets", Json, Cancel))!.Items.Single();
+        var version = _server.Services.GetRequiredService<AssetStore>().Versions(copy.Id).Single();
+        Assert.Equal(("moved.webp", asset.Sha256), (copy.FileName, copy.Sha256));
+        Assert.Equal(png, Blob(version.Original!.BlobSha256));
     }
 
     [Fact]
@@ -102,7 +238,7 @@ public sealed class ImageProcessingTest : IDisposable
 
         var response = await Fetch(asset.Url + query);
 
-        Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
         Assert.Equal(width, SampleImages.Measure(await response.Content.ReadAsByteArrayAsync(Cancel)).Width);
     }
 
@@ -129,39 +265,17 @@ public sealed class ImageProcessingTest : IDisposable
     }
 
     [Fact]
-    public async Task NegotiatesWebPAndAvif()
-    {
-        var asset = await Upload(SampleImages.Png(800, 400), "photo.png");
-
-        var plain = await Fetch(asset.Url);
-        var webp = await Fetch(asset.Url, "image/webp,*/*");
-
-        Assert.Equal("image/png", plain.Content.Headers.ContentType?.MediaType);
-        Assert.Contains("Accept", plain.Headers.Vary);
-        Assert.Equal("image/webp", webp.Content.Headers.ContentType?.MediaType);
-        Assert.NotEqual(plain.Headers.ETag, webp.Headers.ETag);
-
-        // The AVIF copy is made in the background after the upload; until then the answer is WebP.
-        var queue = _server.Services.GetRequiredService<AvifQueue>();
-        for (var i = 0; i < 300 && queue.Pending > 0; i++)
-            await Task.Delay(100, Cancel);
-        var avif = await Fetch(asset.Url, "image/avif,image/webp,*/*");
-        Assert.Equal("image/avif", avif.Content.Headers.ContentType?.MediaType);
-        Assert.Equal((800, 400, 1), SampleImages.Measure(await avif.Content.ReadAsByteArrayAsync(Cancel)));
-    }
-
-    [Fact]
     public async Task OwnersCanTurnConversionOff()
     {
-        var asset = await Upload(SampleImages.Png(800, 400), "photo.png");
+        await TurnConversion(on: false);
+        var png = SampleImages.Png(800, 400);
+        var asset = await Upload(png, "photo.png");
 
-        var project = await (await _admin.PatchAsJsonAsync("/api/v1/projects/default", new ProjectChanges(null, null, ConvertFormats: false), Json, Cancel))
-            .Content.ReadFromJsonAsync<ProjectResponse>(Json, Cancel);
         var response = await Fetch(asset.Url, "image/avif,image/webp,*/*");
 
-        Assert.False(project!.ConvertFormats);
+        Assert.Equal(("photo.png", "image/png", null), (asset.FileName, asset.ContentType, asset.OriginalContentType));
         Assert.Equal("image/png", response.Content.Headers.ContentType?.MediaType);
-        Assert.Empty(response.Headers.Vary);
+        Assert.Equal(png, await response.Content.ReadAsByteArrayAsync(Cancel));
     }
 
     [Fact]

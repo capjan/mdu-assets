@@ -4,7 +4,7 @@ description: Uploads are re-encoded only to remove metadata, ?w= snaps to config
 
 # 0015 Image Variant Rules
 
-- Status: Accepted
+- Status: Accepted; the format rules are superseded by [0019](0019-Format-Chosen-on-Upload.md)
 - Date: 2026-11-15
 
 ## Context

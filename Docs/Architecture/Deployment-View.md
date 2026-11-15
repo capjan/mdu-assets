@@ -73,7 +73,6 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 | `MDU_ASSETS_WIDTHS` | `320,640,800,1024,1280,1600,2048` | Widths `?w=` may ask for; others snap to the next larger one |
 | `MDU_ASSETS_THUMBNAILSIZE` | `480` | Longer side of previews in the web interface |
 | `MDU_ASSETS_IMAGEJOBS` | half the processors | Image jobs (cleaning, previews, widths, conversion) at the same time |
-| `MDU_ASSETS_AVIFWORKERS` | `1` | Background workers for AVIF copies; `0` turns AVIF off |
 
 ## Data directory
 

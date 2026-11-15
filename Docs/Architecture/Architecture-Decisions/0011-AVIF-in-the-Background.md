@@ -4,7 +4,7 @@ description: AVIF variants are encoded by background workers, never while a requ
 
 # 0011 AVIF in the Background
 
-- Status: Accepted
+- Status: Superseded by [0019](0019-Format-Chosen-on-Upload.md)
 - Date: 2026-11-13
 
 ## Context

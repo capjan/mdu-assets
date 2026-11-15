@@ -104,19 +104,34 @@ public static class ImageProcessor
         }
     }
 
-    /// <summary>Converts an image file to WebP or AVIF for content negotiation (DLV-04).</summary>
-    public static EncodedImage Convert(string path, string targetType)
+    /// <summary>The largest width and height WebP can store.</summary>
+    public const int WebPMaxDimension = 16383;
+
+    /// <summary>
+    /// The format decided right after upload (UP-11), the sweet spot between size and quality for documentation: photos (JPEG)
+    /// become lossy WebP at a quality where differences are hard to see, graphics (PNG, BMP, still GIF) such as screenshots and
+    /// diagrams become lossless WebP, so text stays sharp. Returns <c>null</c> when the image keeps its format: SVG, AVIF and WebP,
+    /// animations, images with more than 8 bits per channel or beyond WebP's size limit, and whenever WebP would not be smaller
+    /// than <paramref name="currentSize"/>. Orientation is applied; only the ICC profile is kept.
+    /// </summary>
+    public static EncodedImage? ToWebP(byte[] data, ImageInfo info, bool animated, long currentSize)
     {
+        var lossy = info.Format == ImageFormat.Jpeg;
+        if (animated || !(lossy || info.Format == ImageFormat.Png || info.Format == ImageFormat.Bmp || info.Format == ImageFormat.Gif))
+            return null;
+        if (info.Width > WebPMaxDimension || info.Height > WebPMaxDimension)
+            return null;
+
         try
         {
-            using var image = IsBmp(path) ? OpenBmp(path) : Image.NewFromFile(path, access: Enums.Access.Sequential);
-            return targetType switch
-            {
-                "image/webp" => new EncodedImage(image.WebpsaveBuffer(q: 80, keep: Enums.ForeignKeep.Icc), targetType),
-                "image/avif" => new EncodedImage(
-                    image.HeifsaveBuffer(q: 50, compression: Enums.ForeignHeifCompression.Av1, effort: 4, keep: Enums.ForeignKeep.Icc), targetType),
-                _ => throw new ArgumentOutOfRangeException(nameof(targetType), targetType, "Only WebP and AVIF are produced."),
-            };
+            using var image = info.Format == ImageFormat.Bmp ? DecodeBmp(data) : Image.NewFromBuffer(data);
+            if (image.Format != Enums.BandFormat.Uchar)
+                return null;
+            using var rotated = image.Autorot();
+            var content = lossy
+                ? rotated.WebpsaveBuffer(q: 82, smartSubsample: true, keep: Enums.ForeignKeep.Icc)
+                : rotated.WebpsaveBuffer(lossless: true, keep: Enums.ForeignKeep.Icc);
+            return content.Length < currentSize ? new EncodedImage(content, "image/webp") : null;
         }
         catch (VipsException exception)
         {
@@ -131,8 +146,10 @@ public static class ImageProcessor
         return file.Read(signature) == 2 && signature.SequenceEqual("BM"u8);
     }
 
-    private static Image OpenBmp(string path) =>
-        BmpReader.Read(File.ReadAllBytes(path)) is { } pixels
+    private static Image OpenBmp(string path) => DecodeBmp(File.ReadAllBytes(path));
+
+    private static Image DecodeBmp(byte[] data) =>
+        BmpReader.Read(data) is { } pixels
             ? Image.NewFromMemory(pixels.Data, pixels.Width, pixels.Height, pixels.Bands, Enums.BandFormat.Uchar).Copy(interpretation: Enums.Interpretation.Srgb)
             : throw new ImageDecodeException("This kind of BMP file cannot be decoded.", new NotSupportedException("BMP variant"));
 
