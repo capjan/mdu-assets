@@ -127,6 +127,8 @@ public static class AssetEndpoints
             return ProjectAccess.UnknownAsset(id);
         if (access.CheckAsset(user, asset, ProjectRole.Editor) is { } problem)
             return problem;
+        if (asset.DeletedAt is not null)
+            return LifecycleEndpoints.InTrash(asset);
 
         // The extension always follows the stored type, so a renamed link still says what it is.
         var extension = Path.GetExtension(asset.FileName).TrimStart('.');
@@ -220,10 +222,12 @@ public static class AssetEndpoints
             return ProjectAccess.UnknownAsset(id);
         if (access.CheckAsset(user, asset, ProjectRole.Editor) is { } problem)
             return problem;
+        if (asset.DeletedAt is not null)
+            return LifecycleEndpoints.InTrash(asset);
         if (change.Role is not ("light" or "dark"))
             return Invalid("Invalid role", "The role of this image is light or dark.");
         if (change.PartnerId is not { } partnerId || !AssetId.IsValid(partnerId) || partnerId == id ||
-            assets.FindCurrent(partnerId) is not { } partner || partner.ProjectId != asset.ProjectId)
+            assets.FindCurrent(partnerId) is not { } partner || partner.ProjectId != asset.ProjectId || partner.DeletedAt is not null)
             return Invalid("Invalid partner", "The partner is another image of the same project.");
 
         assets.SetPair(id, change.Role, partner.Id);

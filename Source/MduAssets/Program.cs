@@ -2,6 +2,7 @@ using MduAssets;
 using MduAssets.Api;
 using MduAssets.Delivery;
 using MduAssets.Images;
+using MduAssets.Maintenance;
 using MduAssets.Imaging;
 using MduAssets.Security;
 using MduAssets.Storage;
@@ -66,6 +67,9 @@ builder.Services.AddSingleton<ImageJobs>();
 builder.Services.AddSingleton<AvifQueue>();
 builder.Services.AddHostedService(services => services.GetRequiredService<AvifQueue>());
 builder.Services.AddSingleton<Variants>();
+builder.Services.AddSingleton<BlobCleanup>();
+builder.Services.AddSingleton<TrashCleanup>();
+builder.Services.AddHostedService(services => services.GetRequiredService<TrashCleanup>());
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddSingleton<ProjectAccess>();
@@ -108,6 +112,7 @@ var api = app.MapGroup("/api/v1").RequireHost(settings.UiHost).RequireAuthorizat
 var admin = api.MapGroup("").RequireAuthorization(policy => policy.RequireRole(BasicAuthenticationHandler.AdminRole));
 AssetEndpoints.Map(api);
 FolderEndpoints.Map(api);
+LifecycleEndpoints.Map(api);
 ProjectEndpoints.Map(api);
 UserEndpoints.Map(api, admin);
 

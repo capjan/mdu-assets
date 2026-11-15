@@ -44,8 +44,8 @@ public sealed class ServerSettings
     public string PublicHost => HostPattern(PublicBaseUrl);
 
     /// <summary>The public link of an asset: <c>{PublicBaseUrl}/i/{id}/{fileName}</c>.</summary>
-    public string PublicLink(string id, string fileName) =>
-        $"{PublicBaseUrl.GetLeftPart(UriPartial.Authority)}{PublicBaseUrl.AbsolutePath.TrimEnd('/')}/i/{id}/{Uri.EscapeDataString(fileName)}";
+    public string PublicLink(string id, string fileName, int? version = null) =>
+        $"{PublicBaseUrl.GetLeftPart(UriPartial.Authority)}{PublicBaseUrl.AbsolutePath.TrimEnd('/')}/i/{id}/{(version is { } v ? $"v{v}/" : "")}{Uri.EscapeDataString(fileName)}";
 
     /// <summary>
     /// Checks the options. In development, missing base URLs default to <c>http://127.0.0.1:5180</c> (UI) and
@@ -67,6 +67,8 @@ public sealed class ServerSettings
             throw new StartupException("MDU_ASSETS_MAXPIXELS must be greater than 0.");
         if (options.ThumbnailSize is < 64 or > 2048)
             throw new StartupException("MDU_ASSETS_THUMBNAILSIZE must be between 64 and 2048.");
+        if (options.TrashRetentionDays < 1)
+            throw new StartupException("MDU_ASSETS_TRASHRETENTIONDAYS must be at least 1.");
         if (options.AvifWorkers < 0)
             throw new StartupException("MDU_ASSETS_AVIFWORKERS must be 0 (no AVIF) or more.");
 

@@ -1,7 +1,7 @@
 // Project settings, new project, account and admin pages.
 import {
-    $, announce, clearFormError, copyText, dateFormat, element, flashCopied, formatSize, handleSubmit, numberFormat, plural, request, send,
-    shortDateFormat, showFormError,
+    $, announce, clearFormError, copyText, dateFormat, element, flashCopied, formatSize, handleSubmit, numberFormat, openDialog, plural,
+    request, send, shortDateFormat, showFormError,
 } from "./common.js";
 
 const roles = [["viewer", "Viewer"], ["editor", "Editor"], ["owner", "Owner"]];
@@ -19,10 +19,12 @@ export async function showSettings(project, me) {
     $("details-name").value = project.name;
     $("details-description").value = project.description;
     $("details-convert").checked = project.convertFormats;
+    $("details-max-versions").value = project.maxVersions ?? "";
     handleSubmit(details, async () => {
         clearFormError(details);
         const updated = await send(projectPath(project), "PATCH", {
             name: $("details-name").value, description: $("details-description").value, convertFormats: $("details-convert").checked,
+            maxVersions: Number($("details-max-versions").value || 0),
         });
         project.name = updated.name;
         project.description = updated.description;
@@ -82,8 +84,8 @@ export async function showSettings(project, me) {
 
     const empty = project.assetCount === 0;
     $("delete-hint").textContent = empty
-        ? "The project has no images. Deleting it removes its members as well and cannot be undone."
-        : `The project has ${plural(project.assetCount, "image", "images")}. Only empty projects can be deleted for now; deleting a project with its images arrives with the trash.`;
+        ? `Deleting the project removes its members and folders${project.trashCount ? ` and deletes the ${plural(project.trashCount, "image", "images")} in its trash for good` : ""}. This cannot be undone.`
+        : `The project has ${plural(project.assetCount, "image", "images")} in use. Move them to the trash first; the trash is emptied with the project.`;
     const confirm = $("delete-confirm");
     confirm.disabled = !empty;
     $("delete-button").disabled = true;
@@ -267,4 +269,78 @@ export async function showAdmin(me) {
         renderUsers((await request("/users")).items);
         showStartPassword(result.user, result.startPassword, false);
     });
+}
+
+// Trash (DEL-01 – DEL-03): restore with the same link, or delete for good (owners).
+export async function showTrash(project, { owner }) {
+    document.title = `Trash of ${project.name} – MDU Assets`;
+    $("trash-back").href = `/?project=${encodeURIComponent(project.slug)}`;
+    $("trash-title").textContent = `Trash of ${project.name}`;
+    const path = `/projects/${encodeURIComponent(project.slug)}/trash`;
+
+    const render = async () => {
+        const trash = await request(path);
+        $("trash-summary").textContent = `Images stay here for ${trash.retentionDays} days and are then deleted for good. Their links answer "410 Gone" meanwhile.`;
+        $("trash-empty").hidden = trash.items.length > 0;
+        $("empty-trash").hidden = !owner || trash.items.length === 0;
+        $("trash-list").replaceChildren(...trash.items.map((item) => {
+            const restore = element("button", { class: "primary-button", type: "button", text: "Restore", "aria-label": `Restore ${item.asset.fileName}` });
+            restore.addEventListener("click", async () => {
+                try {
+                    await send(`/assets/${encodeURIComponent(item.asset.id)}/restore`, "POST");
+                    await render();
+                    ($("trash-list").querySelector("button") ?? $("trash-back")).focus();
+                    announce(`Restored ${item.asset.fileName}; its link works again.`);
+                } catch (error) {
+                    announce(error.message);
+                }
+            });
+            const actions = [restore];
+            if (owner) {
+                const purge = element("button", { class: "danger-button", type: "button", text: "Delete for good", "aria-label": `Delete ${item.asset.fileName} for good` });
+                purge.addEventListener("click", async () => {
+                    if (!await openDialog({
+                        title: `Delete ${item.asset.fileName} for good?`,
+                        text: "All its versions are deleted and cannot be restored. Its link keeps answering \"410 Gone\".",
+                        confirmLabel: "Delete for good", danger: true,
+                    })) return;
+                    try {
+                        await send(`${path}/${encodeURIComponent(item.asset.id)}`, "DELETE");
+                        await render();
+                        ($("trash-list").querySelector("button") ?? $("trash-back")).focus();
+                        announce(`Deleted ${item.asset.fileName} for good.`);
+                    } catch (error) {
+                        announce(error.message);
+                    }
+                });
+                actions.push(purge);
+            }
+            return element("li", { class: "trash-item" }, [
+                element("img", { src: `${location.origin}${item.asset.thumbnailUrl}`, alt: "", loading: "lazy" }),
+                element("div", { class: "version-text" }, [
+                    element("strong", { text: item.asset.fileName }),
+                    element("span", { text: `Deleted ${dateFormat.format(new Date(item.deletedAt))}${item.deletedBy ? ` by ${item.deletedBy}` : ""}` }),
+                    element("span", { text: `Deleted for good on ${shortDateFormat.format(new Date(item.deletesAt))}` }),
+                ]),
+                element("div", { class: "row-actions" }, actions),
+            ]);
+        }));
+    };
+
+    $("empty-trash").addEventListener("click", async () => {
+        if (!await openDialog({
+            title: "Empty the trash?",
+            text: "Every image in the trash is deleted for good with all its versions. This cannot be undone.",
+            confirmLabel: "Empty trash", danger: true,
+        })) return;
+        try {
+            const result = await send(path, "DELETE");
+            await render();
+            $("trash-back").focus();
+            announce(`Deleted ${plural(result.deleted, "image", "images")} for good.`);
+        } catch (error) {
+            announce(error.message);
+        }
+    });
+    await render();
 }

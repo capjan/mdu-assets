@@ -4,9 +4,9 @@ import {
     $, api, announce, copyText, element, flashCopied, folderOptions, folderPath, folderSubtree, folderTree, formatSize, numberFormat,
     dateFormat, openDialog, plural, readSetting, request, send, writeSetting,
 } from "./common.js";
-import { showDetails } from "./details.js";
+import { replaceWithFile, showDetails } from "./details.js";
 import { buildSnippet, findPairs, formats as snippetFormats, optionControls, readOptions, writeOptions } from "./snippets.js";
-import { showAccount, showAdmin, showNewProject, showSettings } from "./pages.js";
+import { showAccount, showAdmin, showNewProject, showSettings, showTrash } from "./pages.js";
 
 const params = new URLSearchParams(location.search);
 const state = {
@@ -111,6 +111,13 @@ async function load() {
             if (me.canCreateProjects) {
                 showPage("new-project");
                 showNewProject();
+                return;
+            }
+            break;
+        case "trash":
+            if (canEdit()) {
+                showPage("trash");
+                await showTrash(project, { owner: project.role === "owner" });
                 return;
             }
             break;
@@ -330,6 +337,33 @@ $("clear-selection").addEventListener("click", () => {
 });
 
 // Updates only the toggled card or row and the selection bar, so large grids do not redraw.
+/** Moves images to the trash after a confirmation (DEL-01); their links answer 410 until they are restored. */
+async function trashAssets(ids) {
+    const names = ids.map((id) => state.assets.find((a) => a.id === id)?.fileName).filter(Boolean);
+    const what = names.length === 1 ? names[0] : plural(names.length, "image", "images");
+    if (!await openDialog({
+        title: `Move ${what} to the trash?`,
+        text: "Links answer \"410 Gone\" while the images are in the trash. They can be restored with the same links.",
+        confirmLabel: "Move to trash", danger: true,
+    })) return;
+    let moved = 0;
+    for (const id of ids) {
+        try {
+            await send(`/assets/${encodeURIComponent(id)}`, "DELETE");
+            moved++;
+        } catch (error) {
+            announce(error.message);
+        }
+    }
+    state.selected.clear();
+    await loadAssets();
+    await refreshProjectCounts();
+    $("asset-grid").querySelector(".asset-card[tabindex='0']")?.focus();
+    announce(`Moved ${plural(moved, "image", "images")} to the trash.`);
+}
+
+$("trash-selected").addEventListener("click", () => trashAssets([...state.selected]));
+
 function toggleSelected(asset) {
     if (state.selected.has(asset.id)) state.selected.delete(asset.id); else state.selected.add(asset.id);
     const selected = state.selected.has(asset.id);
@@ -497,6 +531,10 @@ function renderProjects() {
     const settings = $("settings-link");
     settings.hidden = project?.role !== "owner";
     settings.href = project ? `/?project=${encodeURIComponent(project.slug)}&page=settings` : "#";
+    const trash = $("trash-link");
+    trash.hidden = !editable || !project;
+    trash.href = project ? `/?project=${encodeURIComponent(project.slug)}&page=trash` : "#";
+    trash.textContent = project?.trashCount ? `Trash (${numberFormat.format(project.trashCount)})` : "Trash";
 
     $("project-list").replaceChildren(...state.projects.map((p) =>
         element("li", {}, [element("a", {
@@ -519,6 +557,7 @@ function renderSelectionBar() {
     $("selection-bar").hidden = state.selected.size === 0;
     $("selection-count").textContent = `${plural(state.selected.size, "image", "images")} selected`;
     $("move-selected").hidden = !canEdit();
+    $("trash-selected").hidden = !canEdit();
 }
 
 const detailsLink = (asset) => `/?project=${encodeURIComponent(state.project)}&asset=${encodeURIComponent(asset.id)}`;
@@ -628,6 +667,10 @@ $("asset-grid").addEventListener("keydown", async (event) => {
     if (event.key === " ") {
         event.preventDefault();
         toggleSelected(asset);
+    } else if ((event.key === "Delete" || event.key === "Backspace") && canEdit()) {
+        event.preventDefault();
+        // The selection when the focused image is part of it, otherwise just the focused image (ORG-07).
+        trashAssets(state.selected.has(asset.id) ? [...state.selected] : [asset.id]);
     } else if (event.key.toLowerCase() === "c" && !event.shiftKey) {
         event.preventDefault();
         const ok = await copyText(asset.markdown);
@@ -881,6 +924,12 @@ function upload(file, name, alt, { keepDuplicate = false, card = createCard(name
 
 async function uploadFiles(files, { pasted = false } = {}) {
     // Only on the images page, and only for editors and owners; the server checks the role again.
+    // On the details page, a file becomes a new version of the image shown there (VER-01).
+    if (!$("page-asset").hidden) {
+        if (replaceWithFile) replaceWithFile([...files][0]);
+        else announce("Replacing this image needs the editor role.");
+        return;
+    }
     if ($("page-project").hidden) return;
     if (!canEdit()) {
         announce("Uploading needs the editor role in this project. Ask an owner for it.");
@@ -980,8 +1029,9 @@ let dragDepth = 0;
 const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
 
 document.addEventListener("dragenter", (event) => {
-    if (!hasFiles(event) || $("page-project").hidden || !canEdit()) return;
+    if (!hasFiles(event) || !canEdit() || ($("page-project").hidden && ($("page-asset").hidden || !replaceWithFile))) return;
     event.preventDefault();
+    $("drop-target").textContent = $("page-asset").hidden ? (currentProject()?.name ?? "") : `${$("asset-title").textContent} as a new version`;
     dragDepth++;
     dropZone.hidden = false;
 });

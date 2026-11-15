@@ -72,23 +72,28 @@ public static class ProjectEndpoints
         var convertFormats = changes.ConvertFormats ?? target.ConvertFormats;
         if (Validate(name, description) is { } invalid)
             return invalid;
+        if (changes.MaxVersions is < 0 or > 1000)
+            return Invalid("Invalid version limit", "Keep 1 to 1000 versions, or 0 for all.");
+        var maxVersions = changes.MaxVersions is null ? target.MaxVersions : changes.MaxVersions == 0 ? null : changes.MaxVersions;
 
-        if (projects.Update(target.Id, name.Trim(), description.Trim(), convertFormats) is null)
+        if (projects.Update(target.Id, name.Trim(), description.Trim(), convertFormats, maxVersions) is null)
             return ProjectAccess.UnknownProject(project);
         return TypedResults.Ok(Summary(user, projects, target.Id));
     }
 
     /// <summary>
-    /// Deletes an empty project (PRJ-05). Projects with images can be deleted once the trash exists (M6),
-    /// because their images must stay recoverable.
+    /// Deletes a project once all its images are in the trash (PRJ-05). The trashed images are deleted for good with it;
+    /// owners move images to the trash first, so nothing in use disappears by accident.
     /// </summary>
-    private static Results<NoContent, ProblemHttpResult> Delete(string project, ClaimsPrincipal user, ProjectAccess access, ProjectStore projects)
+    private static Results<NoContent, ProblemHttpResult> Delete(
+        string project, ClaimsPrincipal user, ProjectAccess access, ProjectStore projects, Maintenance.BlobCleanup cleanup)
     {
         if (!access.TryGet(user, project, ProjectRole.Owner, out var target, out var problem))
             return problem;
-        if (!projects.DeleteEmpty(target.Id))
-            return TypedResults.Problem("The project still has images. Only empty projects can be deleted for now.",
+        if (projects.DeleteEmpty(target.Id) is not { } removed)
+            return TypedResults.Problem("The project still has images. Move them to the trash first; the trash is emptied with the project.",
                 statusCode: StatusCodes.Status409Conflict, title: "Project not empty");
+        cleanup.Collect(removed);
         return TypedResults.NoContent();
     }
 

@@ -29,7 +29,7 @@ public static class ProjectRoles
     };
 }
 
-public sealed record Project(long Id, string Slug, string Name, string Description, bool ConvertFormats = true);
+public sealed record Project(long Id, string Slug, string Name, string Description, bool ConvertFormats = true, int? MaxVersions = null);
 
 /// <summary>A project with its usage and the role of the user who asked; <c>Role</c> is <c>null</c> when an admin is no member.</summary>
 public sealed record ProjectSummary(
@@ -40,7 +40,9 @@ public sealed record ProjectSummary(
     long TotalSize,
     DateTimeOffset? LastUpload,
     ProjectRole? Role,
-    bool ConvertFormats = true);
+    bool ConvertFormats = true,
+    int TrashCount = 0,
+    int? MaxVersions = null);
 
 public sealed record Member(string UserName, ProjectRole Role, bool IsLocked);
 
@@ -54,10 +56,20 @@ public sealed class ProjectStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, slug, name, description, convert_formats FROM projects WHERE slug = $slug;";
+        command.CommandText = "SELECT id, slug, name, description, convert_formats, max_versions FROM projects WHERE slug = $slug;";
         command.Parameters.AddWithValue("$slug", slug);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4)) : null;
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5)) : null;
+    }
+
+    public Project? FindById(long id)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id, slug, name, description, convert_formats, max_versions FROM projects WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5)) : null;
     }
 
     /// <summary>
@@ -70,12 +82,14 @@ public sealed class ProjectStore(Database database)
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT p.slug, p.name, p.description,
-                   (SELECT count(*) FROM assets a WHERE a.project_id = p.id),
+                   (SELECT count(*) FROM assets a WHERE a.project_id = p.id AND a.deleted_at IS NULL),
                    (SELECT coalesce(sum(v.size), 0) FROM assets a
                     JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
-                    WHERE a.project_id = p.id),
-                   (SELECT max(a.created_at) FROM assets a WHERE a.project_id = p.id),
-                   m.role, p.convert_formats
+                    WHERE a.project_id = p.id AND a.deleted_at IS NULL),
+                   (SELECT max(a.created_at) FROM assets a WHERE a.project_id = p.id AND a.deleted_at IS NULL),
+                   m.role, p.convert_formats,
+                   (SELECT count(*) FROM assets a WHERE a.project_id = p.id AND a.deleted_at IS NOT NULL AND a.purged_at IS NULL),
+                   p.max_versions
             FROM projects p
             {(all ? "LEFT JOIN" : "JOIN")} memberships m ON m.project_id = p.id AND m.user_id = $user
             {(projectId is null ? "" : "WHERE p.id = $project")}
@@ -90,7 +104,8 @@ public sealed class ProjectStore(Database database)
             projects.Add(new ProjectSummary(
                 reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3), reader.GetInt64(4),
                 reader.IsDBNull(5) ? null : Clock.Parse(reader.GetString(5)),
-                reader.IsDBNull(6) ? null : ProjectRoles.Parse(reader.GetString(6)), reader.GetBoolean(7)));
+                reader.IsDBNull(6) ? null : ProjectRoles.Parse(reader.GetString(6)), reader.GetBoolean(7), reader.GetInt32(8),
+                reader.IsDBNull(9) ? null : reader.GetInt32(9)));
         return projects;
     }
 
@@ -127,27 +142,68 @@ public sealed class ProjectStore(Database database)
 
     /// <summary>Changes name and description. The slug and all asset links stay the same (PRJ-04).</summary>
     /// <returns>The changed project, or <c>null</c> when it was deleted meanwhile.</returns>
-    public Project? Update(long id, string name, string description, bool convertFormats)
+    public Project? Update(long id, string name, string description, bool convertFormats, int? maxVersions)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE projects SET name = $name, description = $description, convert_formats = $convert WHERE id = $id RETURNING id, slug, name, description, convert_formats;";
+        command.CommandText = "UPDATE projects SET name = $name, description = $description, convert_formats = $convert, max_versions = $maxVersions WHERE id = $id RETURNING id, slug, name, description, convert_formats, max_versions;";
         command.Parameters.AddWithValue("$convert", convertFormats);
+        command.Parameters.AddWithValue("$maxVersions", (object?)maxVersions ?? DBNull.Value);
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$name", name);
         command.Parameters.AddWithValue("$description", description);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4)) : null;
+        return reader.Read() ? new Project(reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetBoolean(4), reader.IsDBNull(5) ? null : reader.GetInt32(5)) : null;
     }
 
-    /// <summary>Deletes a project without assets. Returns <c>false</c> when it still has assets.</summary>
-    public bool DeleteEmpty(long id)
+    /// <summary>
+    /// Deletes a project whose images are all in the trash or deleted (PRJ-05). The trashed images go for good with it; their
+    /// ids are retired, so no new asset ever gets them. Returns <c>null</c> when the project still has images in use,
+    /// otherwise the blobs of the removed versions, which may now be unused.
+    /// </summary>
+    public IReadOnlyList<string>? DeleteEmpty(long id)
     {
         using var connection = database.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM projects WHERE id = $id AND NOT EXISTS (SELECT 1 FROM assets WHERE project_id = $id);";
-        command.Parameters.AddWithValue("$id", id);
-        return command.ExecuteNonQuery() > 0;
+        using var transaction = connection.BeginTransaction();
+        using (var check = connection.CreateCommand())
+        {
+            check.Transaction = transaction;
+            check.CommandText = "SELECT 1 FROM assets WHERE project_id = $id AND deleted_at IS NULL LIMIT 1;";
+            check.Parameters.AddWithValue("$id", id);
+            if (check.ExecuteScalar() is not null)
+                return null;
+        }
+
+        var blobs = new List<string>();
+        using (var versions = connection.CreateCommand())
+        {
+            versions.Transaction = transaction;
+            versions.CommandText = """
+                DELETE FROM asset_versions WHERE asset_id IN (SELECT id FROM assets WHERE project_id = $id) RETURNING blob_sha256;
+                """;
+            versions.Parameters.AddWithValue("$id", id);
+            using var reader = versions.ExecuteReader();
+            while (reader.Read())
+                blobs.Add(reader.GetString(0));
+        }
+
+        using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = transaction;
+            delete.CommandText = """
+                INSERT OR IGNORE INTO retired_asset_ids (id) SELECT id FROM assets WHERE project_id = $id;
+                DELETE FROM tags WHERE asset_id IN (SELECT id FROM assets WHERE project_id = $id);
+                UPDATE assets SET pair_asset_id = NULL WHERE project_id = $id;
+                DELETE FROM assets WHERE project_id = $id;
+                DELETE FROM folders WHERE project_id = $id;
+                DELETE FROM projects WHERE id = $id;
+                """;
+            delete.Parameters.AddWithValue("$id", id);
+            delete.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        return blobs;
     }
 
     /// <summary>The role of a user in a project, or <c>null</c> for non-members.</summary>

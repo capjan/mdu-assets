@@ -38,4 +38,12 @@ public sealed class VariantStore(DataDirectory dataDirectory)
     }
 
     public bool IsLarger(string blobSha256, string name) => File.Exists(PathOf(blobSha256, name) + LargerSuffix);
+
+    /// <summary>Removes all variants of a blob, when the blob itself goes.</summary>
+    public void DeleteAll(string blobSha256)
+    {
+        var folder = Path.GetDirectoryName(PathOf(blobSha256, "x"))!;
+        if (Directory.Exists(folder))
+            Directory.Delete(folder, recursive: true);
+    }
 }

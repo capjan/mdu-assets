@@ -53,6 +53,7 @@
     <div id="page-project" hidden>
         <div class="page-heading">
             <h1 id="project-title">Images</h1>
+            <a class="secondary-button" id="trash-link" href="#" hidden>Trash</a>
             <a class="secondary-button" id="settings-link" href="#" hidden>Project settings</a>
         </div>
         <p class="project-summary" id="project-summary"></p>
@@ -122,10 +123,11 @@
             <div class="selection-bar" id="selection-bar" hidden>
                 <span id="selection-count" aria-live="polite"></span>
                 <button class="secondary-button" id="move-selected" type="button">Move to folder…</button>
+                <button class="secondary-button" id="trash-selected" type="button">Move to trash</button>
                 <button class="secondary-button" id="clear-selection" type="button">Clear selection</button>
             </div>
             <p class="keyboard-hint" id="keyboard-hint" hidden>
-                <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>Enter</kbd> opens, <kbd>C</kbd> copies the Markdown, <kbd>Space</kbd> selects
+                <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd> move, <kbd>Enter</kbd> opens, <kbd>C</kbd> copies the Markdown, <kbd>Space</kbd> selects, <kbd>Delete</kbd> moves to the trash
             </p>
             <ul class="asset-grid" id="asset-grid" aria-describedby="keyboard-hint"></ul>
             <div class="table-wrapper" id="asset-table-wrapper" hidden>
@@ -151,6 +153,11 @@
         <p class="back-link"><a id="asset-back" href="/">Back to the images</a></p>
         <h1 class="asset-title" id="asset-title"></h1>
         <p class="project-summary" id="asset-summary"></p>
+        <div class="notice notice-warning" id="asset-trashed" hidden>
+            <p id="asset-trashed-text"></p>
+            <div class="form-actions"><button class="primary-button" id="asset-restore" type="button">Restore</button></div>
+        </div>
+        <p class="notice" id="asset-format-hint" hidden tabindex="-1"></p>
         <div class="asset-layout">
             <section class="asset-preview-panel" aria-label="Preview">
                 <div class="preview-switch" role="group" aria-label="Preview background">
@@ -159,6 +166,16 @@
                     <button class="secondary-button" type="button" data-background="dark" aria-pressed="false">Dark</button>
                 </div>
                 <div class="asset-preview" id="asset-preview" data-background="checker"></div>
+                <div class="form-actions" id="asset-actions">
+                    <button class="secondary-button" id="asset-replace" type="button">Replace image…</button>
+                    <input class="file-input" id="asset-replace-input" type="file" accept="image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp,image/svg+xml,.svg" tabindex="-1" aria-hidden="true">
+                    <button class="danger-button" id="asset-trash" type="button">Move to trash</button>
+                </div>
+                <p class="form-hint" id="asset-replace-hint">Drop or paste an image here to replace it. The link stays the same; earlier versions stay under their version links.</p>
+                <section class="panel" aria-labelledby="asset-versions-heading">
+                    <h2 id="asset-versions-heading">Versions</h2>
+                    <ol class="version-list" id="asset-versions"></ol>
+                </section>
             </section>
             <div class="asset-side">
                 <section class="panel" aria-labelledby="asset-snippets-heading">
@@ -199,6 +216,18 @@
         </div>
     </div>
 
+
+    <div id="page-trash" hidden>
+        <p class="back-link"><a id="trash-back" href="/">Back to the images</a></p>
+        <div class="page-heading">
+            <h1 id="trash-title">Trash</h1>
+            <button class="danger-button" id="empty-trash" type="button" hidden>Empty trash</button>
+        </div>
+        <p class="project-summary" id="trash-summary"></p>
+        <ul class="trash-list" id="trash-list"></ul>
+        <p class="empty-state" id="trash-empty" hidden>The trash is empty.</p>
+    </div>
+
     <div id="page-settings" hidden>
         <p class="back-link"><a id="settings-back" href="/">Back to the images</a></p>
         <h1 id="settings-title">Project settings</h1>
@@ -210,6 +239,8 @@
                 <label class="field"><span>Name</span><input id="details-name" type="text" maxlength="100" required autocomplete="off"></label>
                 <label class="field"><span>Description</span><input id="details-description" type="text" maxlength="500" autocomplete="off"></label>
                 <label class="checkbox"><input id="details-convert" type="checkbox"> Deliver WebP and AVIF copies when they are smaller</label>
+                <label class="field"><span>Versions to keep</span><input id="details-max-versions" type="number" min="0" max="1000" step="1" inputmode="numeric" aria-describedby="details-max-versions-hint"></label>
+                <p class="form-hint" id="details-max-versions-hint">0 or empty keeps every version. Older versions beyond the number are deleted when an image is replaced.</p>
                 <p class="form-hint">The short name and all image links stay the same when you rename the project.</p>
                 <div class="form-actions"><button class="primary-button" type="submit">Save</button></div>
             </form>

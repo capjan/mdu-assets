@@ -27,7 +27,9 @@ public sealed record AssetResponse(
     DateTimeOffset CreatedAt,
     string ThumbnailUrl,
     bool Animated,
-    AssetPair? Pair)
+    AssetPair? Pair,
+    string VersionUrl,
+    DateTimeOffset? DeletedAt)
 {
     public static AssetResponse From(AssetFile asset, ServerSettings settings)
     {
@@ -45,9 +47,25 @@ public sealed record AssetResponse(
             asset.Id, asset.ProjectSlug, asset.FolderId, url, asset.FileName, asset.AltText, asset.Description, asset.Tags,
             Snippets.Markdown(asset.AltText, url), Snippets.Html(asset.AltText, url, asset.Width, asset.Height),
             asset.Width, asset.Height, asset.Size, asset.ContentType, asset.BlobSha256, asset.Version, asset.UploadedBy, asset.CreatedAt,
-            $"/api/v1/assets/{asset.Id}/thumbnail?v={asset.BlobSha256[..12]}", asset.Animated, pair);
+            $"/api/v1/assets/{asset.Id}/thumbnail?v={asset.BlobSha256[..12]}", asset.Animated, pair,
+            settings.PublicLink(asset.Id, asset.FileName, asset.Version), asset.DeletedAt);
     }
 }
+
+/// <summary>One version of an asset (VER-03); <c>Url</c> is its version link, which never changes (DLV-02).</summary>
+public sealed record VersionResponse(int Number, string Url, string ContentType, long Size, int? Width, int? Height, string CreatedBy, DateTimeOffset CreatedAt, bool IsCurrent);
+
+public sealed record VersionList(IReadOnlyList<VersionResponse> Items);
+
+/// <summary>The answer to a new version; <c>FormatChanged</c> is set when its type differs from the previous one (VER-02).</summary>
+public sealed record VersionAdded(AssetResponse Asset, bool FormatChanged, string PreviousContentType);
+
+/// <summary>An asset in the trash and when it will be deleted for good (DEL-02).</summary>
+public sealed record TrashItem(AssetResponse Asset, DateTimeOffset DeletedAt, string? DeletedBy, DateTimeOffset DeletesAt);
+
+public sealed record TrashList(IReadOnlyList<TrashItem> Items, int RetentionDays);
+
+public sealed record PurgeResult(int Deleted);
 
 /// <summary>The other half of a light and dark pair; <c>Role</c> is this asset's role, <c>Markdown</c> holds both lines.</summary>
 public sealed record AssetPair(string Id, string Role, string PartnerUrl, string Markdown);
@@ -98,11 +116,13 @@ public sealed record ProjectResponse(
     DateTimeOffset? LastUpload,
     string Role,
     bool IsMember,
-    bool ConvertFormats)
+    bool ConvertFormats,
+    int TrashCount,
+    int? MaxVersions)
 {
     public static ProjectResponse From(ProjectSummary project, bool isAdmin) =>
         new(project.Slug, project.Name, project.Description, project.AssetCount, project.TotalSize, project.LastUpload,
-            (project.Role ?? (isAdmin ? ProjectRole.Owner : ProjectRole.Viewer)).ToText(), project.Role is not null, project.ConvertFormats);
+            (project.Role ?? (isAdmin ? ProjectRole.Owner : ProjectRole.Viewer)).ToText(), project.Role is not null, project.ConvertFormats, project.TrashCount, project.MaxVersions);
 }
 
 public sealed record ProjectList(IReadOnlyList<ProjectResponse> Items);
@@ -110,7 +130,8 @@ public sealed record ProjectList(IReadOnlyList<ProjectResponse> Items);
 public sealed record NewProject(string? Slug, string? Name, string? Description);
 
 /// <summary>Changes to a project; the slug never changes, so tool configurations keep working.</summary>
-public sealed record ProjectChanges(string? Name, string? Description, bool? ConvertFormats = null);
+/// <remarks><c>MaxVersions</c>: 0 keeps all versions, a positive number keeps that many (VER-04).</remarks>
+public sealed record ProjectChanges(string? Name, string? Description, bool? ConvertFormats = null, int? MaxVersions = null);
 
 public sealed record MemberResponse(string UserName, string Role, bool IsLocked);
 
@@ -160,6 +181,10 @@ public sealed record ServerInfo(string UiBaseUrl, string PublicBaseUrl, long Max
 [JsonSerializable(typeof(AssetList))]
 [JsonSerializable(typeof(AssetChanges))]
 [JsonSerializable(typeof(PairChange))]
+[JsonSerializable(typeof(VersionList))]
+[JsonSerializable(typeof(VersionAdded))]
+[JsonSerializable(typeof(TrashList))]
+[JsonSerializable(typeof(PurgeResult))]
 [JsonSerializable(typeof(DuplicateResponse))]
 [JsonSerializable(typeof(AssetMove))]
 [JsonSerializable(typeof(AssetMoveResult))]

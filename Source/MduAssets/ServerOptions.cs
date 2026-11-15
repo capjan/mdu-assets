@@ -45,6 +45,9 @@ public sealed class ServerOptions
     /// <summary>How many image jobs (cleaning, previews, resizing, conversion) run at the same time; 0 means half the processors.</summary>
     public int ImageJobs { get; set; }
 
+    /// <summary>How long deleted assets stay in the trash before they are deleted for good, in days (DEL-02).</summary>
+    public int TrashRetentionDays { get; set; } = 30;
+
     /// <summary>How many background workers encode AVIF copies (DLV-04). AVIF takes about a second per image.</summary>
     public int AvifWorkers { get; set; } = 1;
 }

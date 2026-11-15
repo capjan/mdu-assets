@@ -1,7 +1,7 @@
 // Details of one image (ORG-06): large preview, snippets, description, tags, folder and metadata.
 import {
     $, announce, clearFormError, copyText, dateFormat, element, flashCopied, folderOptions, formatSize, handleSubmit,
-    readSetting, request, send, writeSetting,
+    openDialog, readSetting, request, send, writeSetting,
 } from "./common.js";
 import { buildSnippet, formats, optionControls, readOptions, writeOptions } from "./snippets.js";
 
@@ -13,7 +13,10 @@ const typeNames = {
 const projectLink = (project, folderId) =>
     `/?project=${encodeURIComponent(project.slug)}${folderId ? `&folder=${folderId}` : ""}`;
 
-export async function showDetails(project, id, { editable, onFolderChange, me }) {
+/** Set while a details page is open: files dropped or pasted there replace the image (VER-01). */
+export let replaceWithFile = null;
+
+export async function showDetails(project, id, { editable: canEdit, onFolderChange, me }) {
     const [asset, folders, facets] = await Promise.all([
         request(`/assets/${encodeURIComponent(id)}`),
         request(`/projects/${encodeURIComponent(project.slug)}/folders`).then((list) => list.items),
@@ -25,6 +28,8 @@ export async function showDetails(project, id, { editable, onFolderChange, me })
     }
 
     let current = asset;
+    // Images in the trash are read-only until they are restored.
+    const editable = canEdit && !asset.deletedAt;
     $("asset-back").href = projectLink(project, asset.folderId);
     $("asset-back").textContent = `Back to ${project.name}`;
 
@@ -134,7 +139,8 @@ export async function showDetails(project, id, { editable, onFolderChange, me })
         document.title = `${asset.fileName} – ${project.name} – MDU Assets`;
         $("asset-title").textContent = asset.fileName;
         $("asset-summary").textContent = `${asset.width && asset.height ? `${asset.width} × ${asset.height} · ` : ""}${formatSize(asset.size)}`;
-        preview.replaceChildren(element("img", { src: asset.url, alt: asset.altText }));
+        // The version link changes with each version, so a replaced image shows at once despite browser caches.
+        preview.replaceChildren(element("img", { src: asset.versionUrl, alt: asset.altText }));
 
         renderSnippets();
         renderPair();
@@ -222,5 +228,135 @@ export async function showDetails(project, id, { editable, onFolderChange, me })
         render(updated);
         $("asset-back").href = projectLink(project, updated.folderId);
         announce(`Saved ${updated.fileName}.`);
+    });
+
+    setUpLifecycle(project, { canEdit, editable, owner: project.role === "owner", get: () => current, render });
+}
+
+// Versions, replacing and the trash (VER-01 – VER-04, DEL-01 – DEL-03).
+function setUpLifecycle(project, { canEdit, editable, owner, get, render }) {
+    const asset = get();
+    const projectPage = `/?project=${encodeURIComponent(project.slug)}`;
+
+    // An image in the trash: say so, offer to restore it, hide everything that changes it.
+    $("asset-trashed").hidden = !asset.deletedAt;
+    if (asset.deletedAt) {
+        $("asset-trashed-text").textContent = `This image is in the trash since ${dateFormat.format(new Date(asset.deletedAt))}. Its link answers "410 Gone" until it is restored.`;
+        $("asset-restore").hidden = !canEdit;
+        $("asset-restore").addEventListener("click", async () => {
+            try {
+                await send(`/assets/${encodeURIComponent(asset.id)}/restore`, "POST");
+                location.reload();
+            } catch (error) {
+                announce(error.message);
+            }
+        });
+    }
+    $("asset-actions").hidden = !editable;
+    $("asset-replace-hint").hidden = !editable;
+
+    const renderVersions = async () => {
+        const versions = (await request(`/assets/${encodeURIComponent(asset.id)}/versions`)).items;
+        $("asset-versions").replaceChildren(...versions.map((version) => {
+            const actions = [element("a", { class: "secondary-button", href: version.url, target: "_blank", rel: "noopener", text: "Open", "aria-label": `Open version ${version.number}` })];
+            if (editable && !version.isCurrent) {
+                const restore = element("button", { class: "secondary-button", type: "button", text: "Make current", "aria-label": `Make version ${version.number} current` });
+                restore.addEventListener("click", async () => {
+                    try {
+                        render(await send(`/assets/${encodeURIComponent(asset.id)}/versions/${version.number}/restore`, "POST"));
+                        await renderVersions();
+                        $("asset-versions").querySelector("a")?.focus();
+                        announce(`Version ${version.number} is current again, as a new version.`);
+                    } catch (error) {
+                        announce(error.message);
+                    }
+                });
+                actions.push(restore);
+            }
+            if (owner && !version.isCurrent) {
+                const remove = element("button", { class: "secondary-button", type: "button", text: "Delete", "aria-label": `Delete version ${version.number}` });
+                remove.addEventListener("click", async () => {
+                    if (!await openDialog({
+                        title: `Delete version ${version.number}?`,
+                        text: "Its version link stops working. This cannot be undone.",
+                        confirmLabel: "Delete version", danger: true,
+                    })) return;
+                    try {
+                        await send(`/assets/${encodeURIComponent(asset.id)}/versions/${version.number}`, "DELETE");
+                        await renderVersions();
+                        $("asset-versions").querySelector("a")?.focus();
+                        announce(`Deleted version ${version.number}.`);
+                    } catch (error) {
+                        announce(error.message);
+                    }
+                });
+                actions.push(remove);
+            }
+            const details = [
+                version.width && version.height ? `${version.width} × ${version.height}` : null,
+                formatSize(version.size),
+                typeNames[version.contentType] ?? version.contentType,
+            ].filter(Boolean).join(" · ");
+            return element("li", { class: `version${version.isCurrent ? " is-current" : ""}` }, [
+                element("img", { src: `${version.url}?w=320`, alt: "", loading: "lazy" }),
+                element("div", { class: "version-text" }, [
+                    element("strong", { text: `Version ${version.number}${version.isCurrent ? " (current)" : ""}` }),
+                    element("span", { text: `${dateFormat.format(new Date(version.createdAt))} by ${version.createdBy}` }),
+                    element("span", { text: details }),
+                ]),
+                element("div", { class: "row-actions" }, actions),
+            ]);
+        }));
+    };
+    renderVersions();
+
+    // A new version from the file picker, a drop or a paste on this page.
+    const replace = async (file) => {
+        if (!editable || !file) return;
+        const button = $("asset-replace");
+        button.disabled = true;
+        announce(`Uploading ${file.name || "the image"} as a new version…`);
+        try {
+            const result = await request(`/assets/${encodeURIComponent(asset.id)}/versions`, {
+                method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
+            });
+            render(result.asset);
+            await renderVersions();
+            const hint = $("asset-format-hint");
+            hint.hidden = !result.formatChanged;
+            if (result.formatChanged) {
+                const from = typeNames[result.previousContentType] ?? result.previousContentType;
+                const to = typeNames[result.asset.contentType] ?? result.asset.contentType;
+                hint.textContent = `The new version is ${to} instead of ${from}. The link keeps its old file name ${result.asset.fileName}; browsers and MDU go by the content, so it still works.`;
+                hint.focus();
+            }
+            announce(`Version ${result.asset.version} is now behind the same link.`);
+        } catch (error) {
+            announce(error.message);
+            await openDialog({ title: "The new version was not saved", text: error.message, confirmLabel: "OK" });
+        } finally {
+            button.disabled = false;
+        }
+    };
+    replaceWithFile = editable ? replace : null;
+    $("asset-replace").addEventListener("click", () => $("asset-replace-input").click());
+    $("asset-replace-input").addEventListener("change", (event) => {
+        replace(event.target.files[0]);
+        event.target.value = "";
+    });
+
+    $("asset-trash").addEventListener("click", async () => {
+        const current = get();
+        if (!await openDialog({
+            title: `Move ${current.fileName} to the trash?`,
+            text: "Its link answers \"410 Gone\" while it is in the trash. You can restore it with the same link from the trash.",
+            confirmLabel: "Move to trash", danger: true,
+        })) return;
+        try {
+            await send(`/assets/${encodeURIComponent(current.id)}`, "DELETE");
+            location.href = projectPage;
+        } catch (error) {
+            announce(error.message);
+        }
     });
 }
