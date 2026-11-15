@@ -87,7 +87,7 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 
 ## Backup and restore
 
-`mdu-assets backup <target>` writes a consistent copy of the database (SQLite online backup), the blobs it refers to and the keys, also while the server runs; the [deployment guide](../Deployment.md#backup) shows it for Docker. Where the copy goes (storage box, snapshot, other host) is the operator's choice. `variants/` and `tmp/` are not needed for a restore.
+`mdu-assets backup <target>` writes a consistent copy of the database (SQLite online backup) and the blobs it refers to, also while the server runs, but not the keys `keys/`, so a copy cannot make session cookies; the [deployment guide](../Deployment.md#backup) shows it for Docker. Where the copy goes (storage box, snapshot, other host) is the operator's choice. `variants/` and `tmp/` are not needed for a restore.
 
 ## Other ways to run
 

@@ -41,8 +41,9 @@ public sealed class AuthenticationTest : IDisposable
     {
         var response = await Upload(_server.Ui(user, password));
 
+        // No WWW-Authenticate: browsers would show their password prompt instead of the sign-in page.
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.StartsWith("Basic realm=", response.Headers.WwwAuthenticate.ToString());
+        Assert.Empty(response.Headers.WwwAuthenticate);
     }
 
     [Fact]

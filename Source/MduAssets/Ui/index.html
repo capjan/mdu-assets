@@ -17,10 +17,17 @@
         <span>MDU Assets</span>
     </a>
     <div class="site-header-actions">
-        <nav class="header-nav" aria-label="Account">
-            <a class="header-link" id="admin-link" href="/?page=admin" hidden>Admin</a>
-            <a class="header-link" id="account-link" href="/?page=account"><span class="visually-hidden">Account of </span><span id="user-name"></span></a>
-        </nav>
+        <div class="user-menu">
+            <button class="header-link user-menu-button" id="user-menu-button" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu-list">
+                <span class="visually-hidden">Account menu of </span><span id="user-name"></span>
+                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M5.5 8 10 12.5 14.5 8"></path></svg>
+            </button>
+            <ul class="user-menu-list" id="user-menu-list" role="menu" aria-labelledby="user-menu-button" hidden>
+                <li role="none"><a role="menuitem" id="account-link" href="/?page=account" tabindex="-1">Account</a></li>
+                <li role="none" hidden><a role="menuitem" id="admin-link" href="/?page=admin" tabindex="-1">Admin</a></li>
+                <li role="none" class="user-menu-separator"><button role="menuitem" id="sign-out" type="button" tabindex="-1">Sign out</button></li>
+            </ul>
+        </div>
         <button class="icon-button theme-toggle" id="theme-toggle" type="button">
             <svg class="theme-icon-auto" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                 <path d="M10 1.5a8.5 8.5 0 0 1 0 17z"></path>

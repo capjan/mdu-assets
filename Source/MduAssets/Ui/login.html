@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in – MDU Assets</title>
+    <link rel="icon" href="/ui/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/ui/tokens.css">
+    <link rel="stylesheet" href="/ui/app.css">
+    <script src="/ui/theme.js"></script>
+</head>
+<body class="sign-in-page">
+<main class="sign-in" id="main">
+    <div class="sign-in-brand">
+        <img src="/ui/icon.svg" alt="" width="44" height="44">
+        <span>MDU Assets</span>
+    </div>
+    <form class="form sign-in-form" id="sign-in-form" novalidate>
+        <h1>Sign in</h1>
+        <p class="form-error" id="sign-in-error" role="alert" hidden></p>
+        <label class="field"><span>User name</span><input id="sign-in-name" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+        <label class="field"><span>Password</span><input id="sign-in-password" name="password" type="password" autocomplete="current-password" required></label>
+        <label class="checkbox"><input id="sign-in-remember" type="checkbox"> Stay signed in on this device</label>
+        <div class="form-actions"><button class="primary-button sign-in-button" id="sign-in-button" type="submit">Sign in</button></div>
+    </form>
+    <p class="sign-in-hint">Ask an admin for an account. Tools such as curl or ShareX use a personal API token instead.</p>
+</main>
+<script type="module" src="/ui/login.js"></script>
+</body>
+</html>

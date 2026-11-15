@@ -219,7 +219,7 @@ The database schema is migrated on start. Public links never change between vers
 
 ## Backup
 
-All state is in the `data` volume. `mdu-assets backup <folder>` writes a consistent copy while the server runs: the database through SQLite's online backup, then every file it refers to, and the keys. The target folder must be new or empty. In the container, run the program itself; the image has no shell:
+All state is in the `data` volume. `mdu-assets backup <folder>` writes a consistent copy while the server runs: the database through SQLite's online backup, then every file it refers to. The keys that protect sign-in sessions stay out on purpose; after a restore everybody signs in again. The target folder must be new or empty. In the container, run the program itself; the image has no shell:
 
 ```bash
 cd /opt/mdu-assets && docker compose exec mdu-assets /app/mdu-assets backup /data/backups/$(date +%F)
@@ -241,11 +241,12 @@ Exports from servers that still had folders can be imported too: each image gets
 
 ## Sign-in
 
-The web interface uses HTTP Basic authentication: the browser asks for user name and password on the first visit and sends them with every request. Two consequences until session sign-in arrives:
+The web interface has its own sign-in page. After signing in, the browser keeps a session cookie: until it is closed, or for 14 days without use with **Stay signed in**. The user name in the header opens a menu with **Account**, **Admin** and **Sign out**. Locking a user, deleting a user or changing a password ends that user's sessions at once.
 
-- Signing out means closing the browser or clearing its saved sign-in.
-- Some embedded browsers, for example in-app browsers of editors, show no password prompt. Use a regular browser for the web interface.
+Tools such as curl and ShareX use a personal API token, or user name and password as HTTP Basic credentials. Browsers never get a Basic Auth prompt, and Basic credentials a browser still remembers from older versions are ignored.
 
-Passwords are only accepted over HTTPS. A request over plain HTTP, or one that claims HTTPS through `X-Forwarded-Proto` from an address outside `MDU_ASSETS_TRUSTEDPROXIES`, gets `401`.
+Backups do not contain the keys that protect the session cookies, so after a restore everybody signs in again.
+
+Passwords are only accepted over HTTPS. A sign-in or request over plain HTTP, or one that claims HTTPS through `X-Forwarded-Proto` from an address outside `MDU_ASSETS_TRUSTEDPROXIES`, is refused.
 
 All settings are listed in the [deployment view](Architecture/Deployment-View.md#reference-installation-vps-with-docker).

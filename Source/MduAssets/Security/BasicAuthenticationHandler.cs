@@ -9,18 +9,18 @@ using Microsoft.Extensions.Options;
 namespace MduAssets.Security;
 
 /// <summary>
-/// HTTP Basic authentication against the users table (AUTH-01). Passwords are accepted only over HTTPS,
-/// directly or through a trusted reverse proxy, unless <see cref="ServerOptions.AllowHttp"/> is set.
+/// HTTP Basic credentials and personal API tokens for tools such as curl and ShareX (AUTH-01, AUTH-07). Browsers sign in on
+/// the sign-in page instead (<see cref="Sessions"/>): a 401 never asks for Basic credentials, so no browser shows its password
+/// prompt. Passwords and tokens are accepted only over HTTPS, directly or through a trusted reverse proxy, unless
+/// <see cref="ServerOptions.AllowHttp"/> is set.
 /// </summary>
 public sealed class BasicAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    UserStore users,
     TokenStore tokens,
-    CredentialCache credentials,
+    PasswordCheck passwords,
     SignInThrottle throttle,
-    AuditStore audit,
     ServerSettings settings,
     TimeProvider time)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
@@ -60,27 +60,22 @@ public sealed class BasicAuthenticationHandler(
         }
 
         // Too many failed tries from this address or for this name: refuse without checking the password (AUTH-08).
-        var ip = Context.Connection.RemoteIpAddress?.ToString();
-        if (throttle.IsBlocked(ip, name))
+        var result = passwords.Check(name, password, Context.Connection.RemoteIpAddress?.ToString(), everyRequest: true, out var user);
+        if (result == PasswordCheckResult.Throttled)
         {
             Context.Items[ThrottledKey] = true;
             return Task.FromResult(AuthenticateResult.Fail("Too many failed sign-ins; try again later."));
         }
-
-        var user = users.Find(name);
-        var checkedNow = false;
-        if (user is null || user.IsLocked || !credentials.Verify(user.Id, user.PasswordHash, password, out checkedNow))
-        {
-            throttle.Failed(ip, name);
-            audit.Write(new NewAuditEntry(user?.Id, name.Length > 100 ? name[..100] : name, null, null, "sign-in.failed", null,
-                user is null ? "unknown user" : user.IsLocked ? "locked" : "wrong password", ip));
+        if (user is null)
             return Task.FromResult(AuthenticateResult.Fail("Invalid user name or password."));
-        }
 
-        // Basic Auth sends the password with every request; a sign-in is when it was checked rather than taken from the cache.
-        if (checkedNow)
-            audit.Write(new NewAuditEntry(user.Id, user.Name, null, null, "sign-in", null, null, ip));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(Claims(user), SchemeName));
+        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName)));
+    }
 
+    /// <summary>The claims of a user signed in with a password: who it is, admin, and whether a start password must be changed.</summary>
+    public static List<Claim> Claims(User user)
+    {
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
@@ -90,9 +85,7 @@ public sealed class BasicAuthenticationHandler(
             claims.Add(new Claim(ClaimTypes.Role, AdminRole));
         if (user.MustChangePassword)
             claims.Add(new Claim(Caller.MustChangePasswordClaim, "true"));
-
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, SchemeName));
-        return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, SchemeName)));
+        return claims;
     }
 
     /// <summary>
@@ -149,7 +142,9 @@ public sealed class BasicAuthenticationHandler(
             return Task.CompletedTask;
         }
 
-        Response.Headers.WWWAuthenticate = "Basic realm=\"MDU Asset Server\", charset=\"UTF-8\"";
-        return base.HandleChallengeAsync(properties);
+        // No WWW-Authenticate: a browser would show its password prompt instead of the sign-in page. Tools send their
+        // credentials up front and only need the status.
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
     }
 }

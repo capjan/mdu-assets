@@ -149,7 +149,7 @@ export function showAccount(me, { forced = false, projects = [] } = {}) {
     if (forced) {
         // Nothing else works until the password is changed, so the navigation is hidden.
         $("new-project-link").hidden = true;
-        $("admin-link").hidden = true;
+        $("admin-link").closest("li").hidden = true;
         document.querySelector(".sidebar").hidden = true;
         document.querySelector(".layout").classList.add("layout-single");
         $("password-current").focus();

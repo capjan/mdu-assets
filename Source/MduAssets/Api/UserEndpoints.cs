@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MduAssets.Security;
 using MduAssets.Storage;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace MduAssets.Api;
@@ -31,8 +32,9 @@ public static class UserEndpoints
             user.IsAdmin() || settings.GetFlag(SettingsStore.UsersCanCreateProjects), server.Widths, server.Options.MaxUploadBytes);
 
     /// <summary>Replaces the caller's password; the current one must be given again, also for start passwords.</summary>
-    private static Results<NoContent, ProblemHttpResult> ChangePassword(PasswordChange change, ClaimsPrincipal user, UserStore users)
+    private static async Task<Results<NoContent, ProblemHttpResult>> ChangePassword(PasswordChange change, HttpContext context, UserStore users)
     {
+        var user = context.User;
         var account = users.Find(user.Identity!.Name!)!;
         if (change.CurrentPassword is null || !PasswordHasher.Verify(change.CurrentPassword, account.PasswordHash))
             return TypedResults.Problem("The current password is wrong.", statusCode: StatusCodes.Status400BadRequest, title: "Wrong password");
@@ -43,6 +45,12 @@ public static class UserEndpoints
             return TypedResults.Problem("The new password must differ from the current one.", statusCode: StatusCodes.Status400BadRequest, title: "Same password");
 
         users.SetPassword(account.Id, PasswordHasher.Hash(change.NewPassword), mustChange: false);
+        // Every other session of this user ends with the old password; this one gets a new cookie and stays.
+        if (user.Identity?.AuthenticationType == Sessions.SchemeName)
+        {
+            var current = await context.AuthenticateAsync(Sessions.SchemeName);
+            await Sessions.SignInAsync(context, users.FindById(account.Id)!, current.Properties?.IsPersistent == true);
+        }
         return TypedResults.NoContent();
     }
 

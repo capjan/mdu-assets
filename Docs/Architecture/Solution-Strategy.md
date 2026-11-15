@@ -21,7 +21,7 @@ description: The key approaches with which the MDU Asset Server reaches its qual
 | Images | NetVips/libvips ([ADR-0006](Architecture-Decisions/0006-NetVips-for-Image-Processing.md)); the format chosen once on upload ([ADR-0019](Architecture-Decisions/0019-Format-Chosen-on-Upload.md)) |
 | Web interface | Embedded static files with plain JavaScript on the JSON API ([ADR-0007](Architecture-Decisions/0007-Static-UI-on-the-JSON-API.md)) |
 | Design | MDU design tokens copied with a drift test ([ADR-0010](Architecture-Decisions/0010-MDU-Design-Tokens.md)) |
-| Authentication | Basic Auth first, personal API tokens for tools ([ADR-0008](Architecture-Decisions/0008-Basic-Auth-and-API-Tokens.md)) |
+| Authentication | Sign-in page with a session cookie ([ADR-0021](Architecture-Decisions/0021-Sign-In-Page-and-Session-Cookie.md)); Basic credentials and personal API tokens for tools ([ADR-0008](Architecture-Decisions/0008-Basic-Auth-and-API-Tokens.md)) |
 
 ## Organization of the work
 

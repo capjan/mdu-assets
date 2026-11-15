@@ -11,12 +11,21 @@ public sealed class WebInterfaceTest : IDisposable
     public void Dispose() => _server.Dispose();
 
     [Fact]
-    public async Task AsksForThePasswordOnTheFirstVisit()
+    public async Task SendsVisitorsWithoutSessionToTheSignInPage()
     {
-        var response = await _server.Ui(user: null).GetAsync("/", TestContext.Current.CancellationToken);
+        var browser = _server.Browser();
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.StartsWith("Basic realm=", response.Headers.WwwAuthenticate.ToString());
+        var home = await browser.GetAsync("/", TestContext.Current.CancellationToken);
+        var deep = await browser.GetAsync("/?project=default&asset=AAAAAAAAAA", TestContext.Current.CancellationToken);
+        var page = await browser.GetAsync("/login", TestContext.Current.CancellationToken);
+        var html = await page.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal((HttpStatusCode.Redirect, "/login"), (home.StatusCode, home.Headers.Location?.OriginalString));
+        Assert.Equal("/login?return=%2F%3Fproject%3Ddefault%26asset%3DAAAAAAAAAA", deep.Headers.Location?.OriginalString);
+        Assert.Empty(home.Headers.WwwAuthenticate);
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        Assert.Contains("autocomplete=\"current-password\"", html);
+        Assert.Contains("frame-ancestors 'none'", page.Headers.GetValues("Content-Security-Policy").Single());
     }
 
     [Fact]

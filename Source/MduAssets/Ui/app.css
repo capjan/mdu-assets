@@ -1354,3 +1354,76 @@ html:has(.image-lightbox[open]) { overflow: hidden; }
 .tag-removal { display: grid; gap: 0.15rem; margin: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; }
 
 .tag-removal legend { padding: 0 0.25rem; color: var(--text-secondary); font-size: 0.875rem; }
+
+/* The sign-in page (AUTH-01): one centered form, in both themes. */
+.sign-in-page { display: grid; min-height: 100vh; min-height: 100dvh; place-items: center; padding: 1rem; box-sizing: border-box; }
+
+.sign-in { display: grid; gap: 1.25rem; width: min(100%, 22rem); }
+
+.sign-in-brand { display: flex; align-items: center; justify-content: center; gap: 0.6rem; font-size: 1.25rem; font-weight: 700; }
+
+.sign-in-form {
+    padding: 1.5rem;
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    background: var(--surface-current);
+}
+
+.sign-in-form h1 { margin: 0; font-size: 1.35rem; }
+
+.sign-in-form .field input { width: 100%; box-sizing: border-box; }
+
+.sign-in-button { width: 100%; justify-content: center; }
+
+.sign-in-form .form-actions { display: block; }
+
+.sign-in-hint { margin: 0; color: var(--text-secondary); font-size: 0.875rem; text-align: center; }
+
+/* Account menu behind the user name (AUTH-01). */
+.user-menu { position: relative; margin-right: 0.25rem; }
+
+.user-menu-button { display: inline-flex; align-items: center; gap: 0.25rem; border: 0; background: none; font: inherit; font-size: 0.875rem; cursor: pointer; }
+
+.user-menu-button svg { width: 1rem; height: 1rem; fill: none; stroke: currentcolor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
+
+.user-menu-button[aria-expanded="true"] { color: var(--text-primary); background: var(--hover-background); }
+
+.user-menu-list {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    z-index: 30;
+    min-width: 11rem;
+    margin: 0;
+    padding: 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--page-background);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+    list-style: none;
+}
+
+.user-menu-list[hidden] { display: none; }
+
+.user-menu-list [role="menuitem"] {
+    display: block;
+    width: 100%;
+    padding: 0.4rem 0.65rem;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 0.9rem;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.user-menu-list [role="menuitem"]:hover { background: var(--hover-background); }
+
+.user-menu-list [role="menuitem"]:focus-visible { border-radius: 6px; outline-offset: -2px; }
+
+.user-menu-list [role="menuitem"][aria-current="page"] { font-weight: 600; }
+
+.user-menu-separator { margin-top: 0.3rem; padding-top: 0.3rem; border-top: 1px solid var(--border-subtle); }

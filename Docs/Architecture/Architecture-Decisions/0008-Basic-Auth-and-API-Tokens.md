@@ -4,7 +4,7 @@ description: Users sign in with Basic Auth for now; tools use personal API token
 
 # 0008 Basic Auth and API Tokens
 
-- Status: Accepted
+- Status: Accepted; signing in in the browser is superseded by [0021](0021-Sign-In-Page-and-Session-Cookie.md)
 - Date: 2026-11-13
 
 ## Context

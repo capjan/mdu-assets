@@ -64,8 +64,18 @@ export class ApiError extends Error {
     }
 }
 
+/** The sign-in page, coming back to the current page afterwards. */
+export function signInAgain() {
+    location.href = `/login?return=${encodeURIComponent(location.pathname + location.search)}`;
+}
+
 export async function request(path, options = {}) {
     const response = await fetch(api + path, { ...options, headers: { Accept: "application/json", ...options.headers } });
+    // The session ended, for example after a password change elsewhere or a long pause: sign in again.
+    if (response.status === 401) {
+        signInAgain();
+        throw new ApiError("Your session has ended. Sign in again.", 401);
+    }
     const body = response.headers.get("Content-Type")?.includes("json") ? await response.json() : null;
     if (!response.ok) throw new ApiError(body?.detail || body?.title || `${response.status} ${response.statusText}`, response.status, body?.type);
     return body;
@@ -209,4 +219,59 @@ export function showAudit(list, more, path) {
     };
     more.addEventListener("click", () => load().catch((error) => announce(error.message)));
     return load();
+}
+
+/**
+ * The account menu behind the user name in the header (AUTH-01): Account, Admin and Sign out. Follows the menu button
+ * pattern: Enter, Space or Down open it on the first entry, Up on the last; arrows, Home and End move; Escape closes it and
+ * returns to the button; Tab or a click elsewhere closes it.
+ */
+export function setUpUserMenu() {
+    const button = $("user-menu-button");
+    const list = $("user-menu-list");
+    const items = () => [...list.querySelectorAll("[role=menuitem]")].filter((item) => !item.closest("li").hidden);
+    const open = (focus = "first") => {
+        list.hidden = false;
+        button.setAttribute("aria-expanded", "true");
+        const entries = items();
+        (focus === "last" ? entries.at(-1) : entries[0])?.focus();
+    };
+    const close = (returnFocus = true) => {
+        if (list.hidden) return;
+        list.hidden = true;
+        button.setAttribute("aria-expanded", "false");
+        if (returnFocus) button.focus();
+    };
+    button.addEventListener("click", () => (list.hidden ? open() : close()));
+    button.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            open(event.key === "ArrowUp" ? "last" : "first");
+        }
+    });
+    list.addEventListener("keydown", (event) => {
+        const entries = items();
+        const index = entries.indexOf(document.activeElement);
+        const next = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: entries.length - 1 }[event.key];
+        if (next !== undefined) {
+            event.preventDefault();
+            entries[(next + entries.length) % entries.length].focus();
+        } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            close();
+        } else if (event.key === "Tab") {
+            close(false);
+        }
+    });
+    document.addEventListener("pointerdown", (event) => {
+        if (!list.hidden && !event.target.closest(".user-menu")) close(false);
+    });
+    $("sign-out").addEventListener("click", async () => {
+        try {
+            await fetch(`${api}/session`, { method: "DELETE" });
+        } finally {
+            location.href = "/login";
+        }
+    });
 }

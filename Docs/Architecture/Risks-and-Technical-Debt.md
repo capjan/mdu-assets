@@ -15,7 +15,6 @@ description: Known risks, open questions and technical debt of the MDU Asset Ser
 | Public links are capability URLs | A shared link cannot be taken back except by deleting the image | Explained in the UI and documentation; deletion answers 410 immediately. |
 | SVG as script carrier | XSS against users of the UI host | Sanitizing, sandboxing CSP, separate public host. |
 | Request counts too low | Browser and CDN caches hide requests | Short `max-age`; the UI explains the limits. |
-| No password prompt in some browsers | Basic Auth depends on the browser's own prompt; some embedded browsers show none and cannot open the web interface | Documented in the [deployment guide](../Deployment.md#sign-in); session sign-in (AUTH-09) removes it. Consider moving it before 1.0 |
 | Referrers mostly origin only | Browsers send only the origin for cross-site image requests | Accepted in [ADR-0017](Architecture-Decisions/0017-Referrer-Policy-for-MDU-Pages.md); the interface explains it |
 | Encoding cost on upload | WebP takes about a fifth of a second per image, large lossless images longer; the upload waits for it | Bounded `ImageJobs`; AVIF is no longer encoded ([ADR-0019](Architecture-Decisions/0019-Format-Chosen-on-Upload.md)). |
 | SQLite write contention | Slow statistics or uploads under load | Batched statistics writes, WAL mode; sufficient for the planned team size. |
@@ -36,7 +35,6 @@ Tracked as issues with the label [`decision`](https://github.com/capjan/mdu-asse
 
 | Debt | Reason | Payback |
 | --- | --- | --- |
-| Basic Auth in the browser | No clean sign-out; after a password change the browser asks for the new password | Session login after 1.0 |
 | Own SVG sanitizer next to MDU's icon reader ([ADR-0012](Architecture-Decisions/0012-Own-SVG-Sanitizer.md)) | Icons and complete files need different cleaning | Apply fixes to the allowlist in both places; share a package if the rules start to drift |
-| Data protection keys stored unencrypted | Nothing protects data with them yet | Encrypt them before session sign-in (AUTH-09) uses cookies |
+| Data protection keys stored unencrypted | Whoever can read `keys/` on the server can make session cookies | Only the server user may read the folder, and backups leave it out ([ADR-0021](Architecture-Decisions/0021-Sign-In-Page-and-Session-Cookie.md)); whoever reads it can already read the database |
 | Use cases in the endpoints | Too few for a separate core project; role checks are already in one place (`ProjectAccess`) | `MduAssets.Core` when versions arrive (M6) |

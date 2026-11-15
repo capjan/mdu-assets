@@ -52,8 +52,8 @@ Proxy --> Server : HTTP
 
 | Interface | Host | Protocol and format | Authentication |
 | --- | --- | --- | --- |
-| Web interface | UI host | HTTPS, static HTML/CSS/JS | Basic Auth (later session, OIDC, passkeys) |
-| JSON API `/api/v1` | UI host | HTTPS, JSON, `multipart/form-data` or raw image body, errors as `application/problem+json`, described as OpenAPI | Basic Auth or `Authorization: Bearer <token>` |
+| Web interface | UI host | HTTPS, static HTML/CSS/JS | Sign-in page with session cookie (later OIDC, passkeys) |
+| JSON API `/api/v1` | UI host | HTTPS, JSON, `multipart/form-data` or raw image body, errors as `application/problem+json`, described as OpenAPI | Session cookie from the web interface; tools: Basic credentials or `Authorization: Bearer <token>` |
 | Public check endpoint `/api/v1/public/check` | UI host | HTTPS, JSON | None; returns only a status per URL; rate limited |
 | Public links `/i/<id>/<name>` | Public host | HTTPS, image bytes, conditional and range requests, `Accept` negotiation | None; IDs are unguessable |
 | Health `/healthz` | Internal | HTTP | None |
