@@ -90,7 +90,7 @@ The file name in the URL is ignored for the lookup, so old links still work afte
 
 1. An editor drops a new file on the asset details.
 2. The image pipeline cleans it as on upload; storage writes a new blob and version 2 and points the asset at it.
-3. Cached variants of version 1 are dropped; new variants are created on demand or in the background.
+3. Variants of version 1 stay for its version link ([ADR-0016](Architecture-Decisions/0016-Version-Retention-and-Cache-Purging.md)); version 2 gets its own preview at once, its AVIF copy in the background, and widths on demand. With a version limit set for the project, versions beyond it are deleted for good, and blobs no version uses any more go with their variants.
 4. The public link serves version 2 once the readers' caches expire (`max-age=300`). Version 1 stays reachable under `/i/<id>/v1/<name>` and can be restored as version 3.
 
 ## Background work

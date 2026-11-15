@@ -24,6 +24,7 @@ Each significant, hard-to-reverse decision is recorded as one file in the [MADR]
 | [0013](0013-Image-Headers-Without-an-Image-Library.md) | Read image type and size from headers without an image library | Accepted |
 | [0014](0014-Project-Creation-by-Admin-Setting.md) | Admins create projects; other users only when an admin allows it | Accepted |
 | [0015](0015-Image-Variant-Rules.md) | Re-encode only to remove metadata, snap widths, convert only when smaller | Accepted |
+| [0016](0016-Version-Retention-and-Cache-Purging.md) | Keep all versions unless owners set a limit; no CDN purge hook | Accepted |
 
 ## Template
 

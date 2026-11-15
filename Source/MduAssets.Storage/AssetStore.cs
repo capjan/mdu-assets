@@ -24,10 +24,28 @@ public sealed record AssetFile(
     bool Animated = false,
     string? PairId = null,
     string? PairRole = null,
-    string? PairFileName = null);
+    string? PairFileName = null,
+    DateTimeOffset? DeletedAt = null);
 
 /// <summary>What public delivery needs to serve an asset, read without joins on the hot path.</summary>
 public sealed record DeliveryFile(string BlobSha256, string ContentType, DateTimeOffset CreatedAt, int? Width, bool Animated, bool ConvertFormats);
+
+/// <summary>What a public link points at: a file, an asset in the trash or deleted for good, or nothing.</summary>
+public enum DeliveryStatus
+{
+    Found,
+    Gone,
+    Unknown,
+}
+
+/// <summary>A version of an asset (VER-03).</summary>
+public sealed record AssetVersion(int Number, string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, string CreatedBy, DateTimeOffset CreatedAt);
+
+/// <summary>The content of a new version.</summary>
+public sealed record NewVersion(string BlobSha256, string ContentType, long Size, int? Width, int? Height, bool Animated, long CreatedBy);
+
+/// <summary>An asset in the trash, for the trash list (DEL-02).</summary>
+public sealed record TrashedAsset(AssetFile Asset, DateTimeOffset DeletedAt, string? DeletedBy);
 
 public sealed record NewAsset(
     long ProjectId,
@@ -78,6 +96,8 @@ public sealed class AssetStore(Database database)
             var id = AssetId.New();
             var now = Clock.Now();
             using var transaction = connection.BeginTransaction();
+            if (IsRetired(connection, transaction, id))
+                continue;
             try
             {
                 using (var insertAsset = connection.CreateCommand())
@@ -134,7 +154,7 @@ public sealed class AssetStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        var sql = new StringBuilder(SelectCurrent).Append(" WHERE a.project_id = $project");
+        var sql = new StringBuilder(SelectCurrent).Append(" WHERE a.project_id = $project AND a.deleted_at IS NULL");
         command.Parameters.AddWithValue("$project", projectId);
         if (after is not null)
         {
@@ -225,7 +245,7 @@ public sealed class AssetStore(Database database)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM assets WHERE id = $id AND project_id = $project;";
+        command.CommandText = "SELECT 1 FROM assets WHERE id = $id AND project_id = $project AND deleted_at IS NULL;";
         command.Parameters.AddWithValue("$id", id);
         command.Parameters.AddWithValue("$project", projectId);
         return command.ExecuteScalar() is not null;
@@ -242,24 +262,239 @@ public sealed class AssetStore(Database database)
         return reader.Read() ? ReadAsset(reader) : null;
     }
 
-    /// <summary>Finds what public delivery needs for an asset, or <c>null</c> for an unknown id.</summary>
-    public DeliveryFile? FindForDelivery(string id)
+    /// <summary>
+    /// Finds what public delivery needs for the current version of an asset, or for version <paramref name="version"/>
+    /// (DLV-02). Assets in the trash or deleted for good are <see cref="DeliveryStatus.Gone"/> (DLV-07).
+    /// </summary>
+    public (DeliveryStatus Status, DeliveryFile? File) FindForDelivery(string id, int? version = null)
     {
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT v.blob_sha256, v.content_type, v.created_at, v.width, v.animated, p.convert_formats
+            SELECT a.deleted_at, v.blob_sha256, v.content_type, v.created_at, v.width, v.animated, p.convert_formats
             FROM assets a
-            JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
             JOIN projects p ON p.id = a.project_id
+            LEFT JOIN asset_versions v ON v.asset_id = a.id AND v.number = coalesce($version, a.current_version)
             WHERE a.id = $id;
             """;
         command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$version", (object?)version ?? DBNull.Value);
         using var reader = command.ExecuteReader();
-        return reader.Read()
-            ? new DeliveryFile(reader.GetString(0), reader.GetString(1), Clock.Parse(reader.GetString(2)),
-                reader.IsDBNull(3) ? null : reader.GetInt32(3), reader.GetBoolean(4), reader.GetBoolean(5))
-            : null;
+        if (!reader.Read())
+            return (DeliveryStatus.Unknown, null);
+        if (!reader.IsDBNull(0))
+            return (DeliveryStatus.Gone, null);
+        if (reader.IsDBNull(1))
+            return (DeliveryStatus.Unknown, null);
+        return (DeliveryStatus.Found, new DeliveryFile(reader.GetString(1), reader.GetString(2), Clock.Parse(reader.GetString(3)),
+            reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.GetBoolean(5), reader.GetBoolean(6)));
+    }
+
+    /// <summary>All versions of an asset, newest first (VER-03).</summary>
+    public IReadOnlyList<AssetVersion> Versions(string id)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, v.animated, u.name, v.created_at
+            FROM asset_versions v JOIN users u ON u.id = v.created_by
+            WHERE v.asset_id = $id ORDER BY v.number DESC;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+        var versions = new List<AssetVersion>();
+        while (reader.Read())
+            versions.Add(new AssetVersion(reader.GetInt32(0), reader.GetString(1), reader.GetString(2), reader.GetInt64(3),
+                reader.IsDBNull(4) ? null : reader.GetInt32(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                reader.GetBoolean(6), reader.GetString(7), Clock.Parse(reader.GetString(8))));
+        return versions;
+    }
+
+    /// <summary>
+    /// Adds a version and makes it current (VER-01); the link stays the same. With <paramref name="keep"/>, older versions
+    /// beyond that number are removed (VER-04). Returns the blobs of removed versions, which may now be unused.
+    /// </summary>
+    public IReadOnlyList<string> AddVersion(string id, NewVersion version, int? keep = null)
+    {
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+        using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at)
+                VALUES ($id, (SELECT max(number) + 1 FROM asset_versions WHERE asset_id = $id), $blob, $type, $size, $width, $height, $animated, $user, $now);
+                UPDATE assets SET current_version = (SELECT max(number) FROM asset_versions WHERE asset_id = $id) WHERE id = $id;
+                """;
+            insert.Parameters.AddWithValue("$id", id);
+            insert.Parameters.AddWithValue("$blob", version.BlobSha256);
+            insert.Parameters.AddWithValue("$type", version.ContentType);
+            insert.Parameters.AddWithValue("$size", version.Size);
+            insert.Parameters.AddWithValue("$width", (object?)version.Width ?? DBNull.Value);
+            insert.Parameters.AddWithValue("$height", (object?)version.Height ?? DBNull.Value);
+            insert.Parameters.AddWithValue("$animated", version.Animated);
+            insert.Parameters.AddWithValue("$user", version.CreatedBy);
+            insert.Parameters.AddWithValue("$now", Clock.Now());
+            insert.ExecuteNonQuery();
+        }
+
+        var removed = new List<string>();
+        if (keep is { } limit)
+        {
+            using var prune = connection.CreateCommand();
+            prune.Transaction = transaction;
+            prune.CommandText = """
+                DELETE FROM asset_versions WHERE asset_id = $id AND number IN
+                    (SELECT number FROM asset_versions WHERE asset_id = $id ORDER BY number DESC LIMIT -1 OFFSET $keep)
+                RETURNING blob_sha256;
+                """;
+            prune.Parameters.AddWithValue("$id", id);
+            prune.Parameters.AddWithValue("$keep", limit);
+            using var reader = prune.ExecuteReader();
+            while (reader.Read())
+                removed.Add(reader.GetString(0));
+        }
+
+        transaction.Commit();
+        return removed;
+    }
+
+    /// <summary>Deletes an old version for good (VER-04). The current version cannot be deleted; returns its blob, or <c>null</c>.</summary>
+    public string? DeleteVersion(string id, int number)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM asset_versions WHERE asset_id = $id AND number = $number
+                AND number <> (SELECT current_version FROM assets WHERE id = $id)
+            RETURNING blob_sha256;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$number", number);
+        return command.ExecuteScalar() as string;
+    }
+
+    /// <summary>Moves an asset to the trash (DEL-01). Its pair is dissolved, because the partner stays in use.</summary>
+    public bool Trash(string id, long userId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE assets SET pair_asset_id = NULL, pair_role = NULL WHERE pair_asset_id = $id;
+            UPDATE assets SET deleted_at = $now, deleted_by = $user, pair_asset_id = NULL, pair_role = NULL
+            WHERE id = $id AND deleted_at IS NULL;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        command.Parameters.AddWithValue("$user", userId);
+        command.Parameters.AddWithValue("$now", Clock.Now());
+        return command.ExecuteNonQuery() > 0;
+    }
+
+    /// <summary>Takes an asset out of the trash; its link works again (DEL-02).</summary>
+    public bool Restore(string id)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE assets SET deleted_at = NULL, deleted_by = NULL WHERE id = $id AND deleted_at IS NOT NULL AND purged_at IS NULL;";
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteNonQuery() > 0;
+    }
+
+    /// <summary>The assets of a project in the trash, recently deleted first.</summary>
+    public IReadOnlyList<TrashedAsset> Trash(long projectId)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = SelectCurrent.Replace("LEFT JOIN assets pa", "LEFT JOIN users du ON du.id = a.deleted_by\n        LEFT JOIN assets pa", StringComparison.Ordinal)
+            .Replace("a.deleted_at\n", "a.deleted_at, du.name\n", StringComparison.Ordinal) +
+            " WHERE a.project_id = $project AND a.deleted_at IS NOT NULL AND a.purged_at IS NULL ORDER BY a.deleted_at DESC;";
+        command.Parameters.AddWithValue("$project", projectId);
+        using var reader = command.ExecuteReader();
+        var assets = new List<TrashedAsset>();
+        while (reader.Read())
+        {
+            var asset = ReadAsset(reader);
+            assets.Add(new TrashedAsset(asset, asset.DeletedAt!.Value, reader.IsDBNull(21) ? null : reader.GetString(21)));
+        }
+
+        return assets;
+    }
+
+    /// <summary>Ids of trashed assets deleted before <paramref name="cutoff"/>, for the final deletion (DEL-02).</summary>
+    public IReadOnlyList<string> TrashedBefore(DateTimeOffset cutoff, long? projectId = null)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id FROM assets WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < $cutoff
+                AND ($project IS NULL OR project_id = $project);
+            """;
+        command.Parameters.AddWithValue("$cutoff", Clock.Format(cutoff));
+        command.Parameters.AddWithValue("$project", (object?)projectId ?? DBNull.Value);
+        using var reader = command.ExecuteReader();
+        var ids = new List<string>();
+        while (reader.Read())
+            ids.Add(reader.GetString(0));
+        return ids;
+    }
+
+    /// <summary>
+    /// Deletes a trashed asset for good (DEL-02, DEL-03): versions and tags go, the row stays as a tombstone, so the id is never
+    /// reused and the link keeps answering 410. Returns the blobs of the removed versions, which may now be unused.
+    /// </summary>
+    public IReadOnlyList<string> Purge(string id)
+    {
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+        var blobs = new List<string>();
+        using (var delete = connection.CreateCommand())
+        {
+            delete.Transaction = transaction;
+            delete.CommandText = """
+                DELETE FROM asset_versions WHERE asset_id = $id
+                    AND EXISTS (SELECT 1 FROM assets WHERE id = $id AND deleted_at IS NOT NULL AND purged_at IS NULL)
+                RETURNING blob_sha256;
+                """;
+            delete.Parameters.AddWithValue("$id", id);
+            using var reader = delete.ExecuteReader();
+            while (reader.Read())
+                blobs.Add(reader.GetString(0));
+        }
+
+        using (var mark = connection.CreateCommand())
+        {
+            mark.Transaction = transaction;
+            mark.CommandText = """
+                DELETE FROM tags WHERE asset_id = $id;
+                UPDATE assets SET purged_at = $now, folder_id = NULL WHERE id = $id AND deleted_at IS NOT NULL;
+                """;
+            mark.Parameters.AddWithValue("$id", id);
+            mark.Parameters.AddWithValue("$now", Clock.Now());
+            mark.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        return blobs;
+    }
+
+    /// <summary>Whether any version still refers to a blob; unused blobs and their variants can go.</summary>
+    public bool IsBlobUsed(string blobSha256)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM asset_versions WHERE blob_sha256 = $blob LIMIT 1;";
+        command.Parameters.AddWithValue("$blob", blobSha256);
+        return command.ExecuteScalar() is not null;
+    }
+
+    /// <summary>Whether an id was given to an asset that no longer has a row; such ids are never handed out again.</summary>
+    private static bool IsRetired(SqliteConnection connection, SqliteTransaction transaction, string id)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM retired_asset_ids WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        return command.ExecuteScalar() is not null;
     }
 
     /// <summary>
@@ -330,7 +565,7 @@ public sealed class AssetStore(Database database)
         using var command = connection.CreateCommand();
         var distinct = ids.Distinct(StringComparer.Ordinal).ToList();
         var names = distinct.Select((_, i) => $"$id{i}").ToList();
-        command.CommandText = $"UPDATE assets SET folder_id = $folder WHERE project_id = $project AND id IN ({string.Join(", ", names)});";
+        command.CommandText = $"UPDATE assets SET folder_id = $folder WHERE project_id = $project AND deleted_at IS NULL AND id IN ({string.Join(", ", names)});";
         for (var i = 0; i < distinct.Count; i++)
             command.Parameters.AddWithValue(names[i], distinct[i]);
         command.Parameters.AddWithValue("$project", projectId);
@@ -358,15 +593,15 @@ public sealed class AssetStore(Database database)
         return new AssetFacets(
             Query("""
                 SELECT min(t.name), count(*) FROM tags t JOIN assets a ON a.id = t.asset_id
-                WHERE a.project_id = $project GROUP BY t.key ORDER BY count(*) DESC, t.key;
+                WHERE a.project_id = $project AND a.deleted_at IS NULL GROUP BY t.key ORDER BY count(*) DESC, t.key;
                 """, r => new TagCount(r.GetString(0), r.GetInt32(1))),
             Query("""
                 SELECT DISTINCT u.name FROM assets a JOIN users u ON u.id = a.created_by
-                WHERE a.project_id = $project ORDER BY u.name COLLATE NOCASE;
+                WHERE a.project_id = $project AND a.deleted_at IS NULL ORDER BY u.name COLLATE NOCASE;
                 """, r => r.GetString(0)),
             Query("""
                 SELECT DISTINCT v.content_type FROM assets a JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
-                WHERE a.project_id = $project ORDER BY v.content_type;
+                WHERE a.project_id = $project AND a.deleted_at IS NULL ORDER BY v.content_type;
                 """, r => r.GetString(0)));
     }
 
@@ -377,7 +612,7 @@ public sealed class AssetStore(Database database)
         using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT a.id FROM assets a JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
-            WHERE a.project_id = $project AND v.blob_sha256 = $blob ORDER BY a.created_at LIMIT 1;
+            WHERE a.project_id = $project AND a.deleted_at IS NULL AND v.blob_sha256 = $blob ORDER BY a.created_at LIMIT 1;
             """;
         command.Parameters.AddWithValue("$project", projectId);
         command.Parameters.AddWithValue("$blob", blobSha256);
@@ -436,7 +671,7 @@ public sealed class AssetStore(Database database)
         SELECT a.id, a.project_id, p.slug, a.folder_id, a.file_name, a.alt_text, a.description,
                (SELECT group_concat(t.name, char(31)) FROM (SELECT name FROM tags WHERE asset_id = a.id ORDER BY key) t),
                v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, u.name, v.created_at,
-               v.animated, a.pair_asset_id, a.pair_role, pa.file_name
+               v.animated, a.pair_asset_id, a.pair_role, pa.file_name, a.deleted_at
         FROM assets a
         JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
         JOIN projects p ON p.id = a.project_id
@@ -458,5 +693,6 @@ public sealed class AssetStore(Database database)
             reader.GetBoolean(16),
             reader.IsDBNull(17) ? null : reader.GetString(17),
             reader.IsDBNull(18) ? null : reader.GetString(18),
-            reader.IsDBNull(19) ? null : reader.GetString(19));
+            reader.IsDBNull(19) ? null : reader.GetString(19),
+            reader.IsDBNull(20) ? null : Clock.Parse(reader.GetString(20)));
 }

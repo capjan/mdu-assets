@@ -141,7 +141,8 @@ export function openDialog({ title, text = "", fields = [], confirmLabel, danger
         });
         document.body.append(dialog);
         dialog.showModal();
-        (form.querySelector("input, select") ?? confirm).focus();
+        // Destructive dialogs start on Cancel, so a quick Enter does not delete anything.
+        (form.querySelector("input, select") ?? (danger ? cancel : confirm)).focus();
     });
 }
 
