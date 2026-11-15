@@ -48,6 +48,10 @@
             <p class="sidebar-label" id="folders-label">Folders</p>
             <ul class="folder-tree" id="folder-tree" aria-labelledby="folders-label"></ul>
         </div>
+        <div class="folder-nav" id="tag-nav" hidden>
+            <p class="sidebar-label" id="tags-label">Tags</p>
+            <ul class="folder-tree" id="tag-list" aria-labelledby="tags-label"></ul>
+        </div>
     </nav>
     <main class="main" id="main" tabindex="-1">
     <div id="page-project" hidden>
@@ -112,7 +116,7 @@
                 <details class="filters" id="filters">
                     <summary>Filters<span class="filter-count" id="filter-count"></span></summary>
                     <div class="filter-fields">
-                        <label class="field"><span>Tag</span><select id="filter-tag"><option value="">Any tag</option></select></label>
+                        <label class="field"><span>Add a tag</span><select id="filter-tag"><option value="">Choose a tag</option></select></label>
                         <label class="field"><span>Type</span><select id="filter-type"><option value="">Any type</option></select></label>
                         <label class="field"><span>Uploaded by</span><select id="filter-uploader"><option value="">Anyone</option></select></label>
                         <label class="field"><span>Requests</span><select id="filter-unused">
@@ -129,8 +133,10 @@
                     </div>
                 </details>
             </form>
+            <div class="tag-chips" id="tag-chips" role="group" aria-label="Tag filter" hidden></div>
             <div class="selection-bar" id="selection-bar" hidden>
                 <span id="selection-count" aria-live="polite"></span>
+                <button class="secondary-button" id="tag-selected" type="button">Tags…</button>
                 <button class="secondary-button" id="move-selected" type="button">Move to folder…</button>
                 <button class="secondary-button" id="trash-selected" type="button">Move to trash</button>
                 <button class="secondary-button" id="clear-selection" type="button">Clear selection</button>

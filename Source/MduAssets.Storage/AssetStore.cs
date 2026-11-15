@@ -85,13 +85,14 @@ public sealed record AssetQuery(
     string? Text = null,
     IReadOnlyList<long>? FolderIds = null,
     bool Unfiled = false,
-    string? Tag = null,
+    IReadOnlyList<string>? Tags = null,
     string? ContentType = null,
     DateTimeOffset? From = null,
     DateTimeOffset? Before = null,
     string? UploadedBy = null,
     int? NotRequestedForDays = null,
-    DateTimeOffset? Now = null);
+    DateTimeOffset? Now = null,
+    bool Untagged = false);
 
 public sealed record TagCount(string Name, int Count);
 
@@ -223,11 +224,16 @@ public sealed class AssetStore(Database database)
                 command.Parameters.AddWithValue(names[i], folders[i]);
         }
 
-        if (!string.IsNullOrWhiteSpace(query.Tag))
+        // Every chosen tag must be on the image (ORG-04): more tags narrow the list down.
+        var tagKeys = (query.Tags ?? []).Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => TagKey(t.Trim())).Distinct().ToList();
+        for (var i = 0; i < tagKeys.Count; i++)
         {
-            sql.Append(" AND EXISTS (SELECT 1 FROM tags t WHERE t.asset_id = a.id AND t.key = $tag)");
-            command.Parameters.AddWithValue("$tag", TagKey(query.Tag.Trim()));
+            sql.Append($" AND EXISTS (SELECT 1 FROM tags t WHERE t.asset_id = a.id AND t.key = $tag{i})");
+            command.Parameters.AddWithValue($"$tag{i}", tagKeys[i]);
         }
+
+        if (query.Untagged)
+            sql.Append(" AND NOT EXISTS (SELECT 1 FROM tags t WHERE t.asset_id = a.id)");
 
         if (query.ContentType is not null)
         {
@@ -685,6 +691,119 @@ public sealed class AssetStore(Database database)
             command.Parameters.AddWithValue(names[i], distinct[i]);
         command.Parameters.AddWithValue("$project", projectId);
         command.Parameters.AddWithValue("$folder", (object?)folderId ?? DBNull.Value);
+        return command.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Adds and removes tags on several assets of a project at once (ORG-03). A tag that the project already uses keeps its
+    /// spelling. Assets of other projects and assets in the trash are left alone. Returns the number of assets whose tags
+    /// changed, or <c>null</c> when an asset would get more than <paramref name="maxPerAsset"/> tags; then nothing changes.
+    /// </summary>
+    public int? ChangeTags(long projectId, IReadOnlyCollection<string> ids, IReadOnlyCollection<string> add, IReadOnlyCollection<string> remove, int maxPerAsset)
+    {
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+        var distinct = ids.Distinct(StringComparer.Ordinal).ToList();
+        var targets = new List<string>();
+        using (var select = connection.CreateCommand())
+        {
+            select.Transaction = transaction;
+            var names = distinct.Select((_, i) => $"$id{i}").ToList();
+            select.CommandText = $"SELECT id FROM assets WHERE project_id = $project AND deleted_at IS NULL AND id IN ({string.Join(", ", names)});";
+            select.Parameters.AddWithValue("$project", projectId);
+            for (var i = 0; i < distinct.Count; i++)
+                select.Parameters.AddWithValue(names[i], distinct[i]);
+            using var reader = select.ExecuteReader();
+            while (reader.Read())
+                targets.Add(reader.GetString(0));
+        }
+
+        var changed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in targets)
+        {
+            foreach (var tag in remove)
+            {
+                using var delete = connection.CreateCommand();
+                delete.Transaction = transaction;
+                delete.CommandText = "DELETE FROM tags WHERE asset_id = $id AND key = $key;";
+                delete.Parameters.AddWithValue("$id", id);
+                delete.Parameters.AddWithValue("$key", TagKey(tag.Trim()));
+                if (delete.ExecuteNonQuery() > 0)
+                    changed.Add(id);
+            }
+
+            foreach (var tag in add)
+            {
+                using var insert = connection.CreateCommand();
+                insert.Transaction = transaction;
+                insert.CommandText = """
+                    INSERT OR IGNORE INTO tags (asset_id, key, name)
+                    VALUES ($id, $key, coalesce((SELECT t.name FROM tags t JOIN assets a ON a.id = t.asset_id
+                                                 WHERE a.project_id = $project AND t.key = $key LIMIT 1), $name));
+                    """;
+                insert.Parameters.AddWithValue("$id", id);
+                insert.Parameters.AddWithValue("$key", TagKey(tag));
+                insert.Parameters.AddWithValue("$name", tag);
+                insert.Parameters.AddWithValue("$project", projectId);
+                if (insert.ExecuteNonQuery() > 0)
+                    changed.Add(id);
+            }
+
+            using var count = connection.CreateCommand();
+            count.Transaction = transaction;
+            count.CommandText = "SELECT count(*) FROM tags WHERE asset_id = $id;";
+            count.Parameters.AddWithValue("$id", id);
+            if ((long)count.ExecuteScalar()! > maxPerAsset)
+                return null;
+        }
+
+        transaction.Commit();
+        return changed.Count;
+    }
+
+    /// <summary>
+    /// Renames a tag in all assets of a project, also in the trash (ORG-03). When <paramref name="newName"/> is a tag the
+    /// project already uses, the two are merged. Returns the number of assets that had the tag, 0 when none had it.
+    /// </summary>
+    public int RenameTag(long projectId, string oldName, string newName)
+    {
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+        void Execute(string sql, out int rows)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("$project", projectId);
+            command.Parameters.AddWithValue("$old", TagKey(oldName.Trim()));
+            command.Parameters.AddWithValue("$new", TagKey(newName));
+            command.Parameters.AddWithValue("$name", newName);
+            rows = command.ExecuteNonQuery();
+        }
+
+        Execute("""
+            INSERT OR IGNORE INTO tags (asset_id, key, name)
+            SELECT t.asset_id, $new, $name FROM tags t JOIN assets a ON a.id = t.asset_id WHERE a.project_id = $project AND t.key = $old;
+            """, out _);
+        Execute("""
+            DELETE FROM tags WHERE key = $old AND $old <> $new AND asset_id IN (SELECT id FROM assets WHERE project_id = $project);
+            """, out var removed);
+        // The new spelling applies everywhere, also where the target tag existed before.
+        Execute("""
+            UPDATE tags SET name = $name WHERE key = $new AND asset_id IN (SELECT id FROM assets WHERE project_id = $project);
+            """, out var renamed);
+        transaction.Commit();
+        return TagKey(oldName.Trim()) == TagKey(newName) ? renamed : removed;
+    }
+
+    /// <summary>Removes a tag from all assets of a project, also in the trash. Returns the number of assets that had it.</summary>
+    public int DeleteTag(long projectId, string name)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM tags WHERE key = $key AND asset_id IN (SELECT id FROM assets WHERE project_id = $project);";
+        command.Parameters.AddWithValue("$key", TagKey(name.Trim()));
+        command.Parameters.AddWithValue("$project", projectId);
         return command.ExecuteNonQuery();
     }
 

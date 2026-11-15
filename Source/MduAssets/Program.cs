@@ -157,6 +157,7 @@ var api = app.MapGroup("/api/v1").RequireHost(settings.UiHost).RequireAuthorizat
 var admin = api.MapGroup("").RequireAuthorization(policy => policy.RequireRole(BasicAuthenticationHandler.AdminRole)).RequirePassword();
 AssetEndpoints.Map(api);
 FolderEndpoints.Map(api);
+TagEndpoints.Map(api);
 LifecycleEndpoints.Map(api);
 ProjectEndpoints.Map(api);
 UserEndpoints.Map(api, admin);

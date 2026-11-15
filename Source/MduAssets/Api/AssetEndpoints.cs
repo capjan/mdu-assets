@@ -45,12 +45,12 @@ public static class AssetEndpoints
     /// <summary>
     /// Lists a project's assets newest first, at most <c>limit</c> at a time; <c>next</c> is the <c>after</c> value of the
     /// following page. Filters (ORG-04): <c>q</c> (words in name, alt text, description or tags), <c>folder</c> (an id or
-    /// <c>none</c>), <c>subfolders</c>, <c>tag</c>, <c>type</c> (for example <c>png</c>), <c>from</c> and <c>to</c>
+    /// <c>none</c>), <c>subfolders</c>, <c>tag</c> (repeatable; every tag must be on the image), <c>untagged</c>, <c>type</c> (for example <c>png</c>), <c>from</c> and <c>to</c>
     /// (upload dates in UTC, inclusive), <c>fromTime</c> and <c>beforeTime</c> (ISO 8601 times with offset; the web interface
     /// sends these for the days of its own time zone; <c>beforeTime</c> is exclusive), <c>uploader</c>.
     /// </summary>
     private static Results<Ok<AssetList>, ProblemHttpResult> List(
-        string project, int? limit, string? after, string? q, string? folder, bool? subfolders, string? tag, string? type,
+        string project, int? limit, string? after, string? q, string? folder, bool? subfolders, string[]? tag, bool? untagged, string? type,
         string? from, string? to, string? fromTime, string? beforeTime, string? uploader, int? unused,
         ClaimsPrincipal user, ProjectAccess access, AssetStore assets, FolderStore folders, ServerSettings settings)
     {
@@ -83,7 +83,8 @@ public static class AssetEndpoints
         if (unused is < 0 or > 3650)
             return Invalid("Invalid filter", "unused is 0 for never requested, or a number of days up to 3650.");
 
-        var query = new AssetQuery(q, folderIds, unfiled, tag, contentType, Later(start, startTime), Earlier(end?.AddDays(1), endTime), uploader, unused);
+        var query = new AssetQuery(q, folderIds, unfiled, tag, contentType, Later(start, startTime), Earlier(end?.AddDays(1), endTime), uploader, unused,
+            Untagged: untagged == true);
         var page = assets.List(target.Id, size, after, query);
         var items = page.Take(size).Select(a => AssetResponse.From(a, settings)).ToList();
         return TypedResults.Ok(new AssetList(items, page.Count > size ? items[^1].Id : null));
