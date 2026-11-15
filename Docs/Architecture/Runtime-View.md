@@ -32,7 +32,7 @@ sequenceDiagram
 The upload answers as soon as the original, its metadata and the thumbnail are stored. The AVIF variant follows in the background ([ADR-0011](Architecture-Decisions/0011-AVIF-in-the-Background.md)).
 
 > [!NOTE]
-> Since M2 the sequence runs as shown up to the snippet, except the image pipeline steps: the original is stored as uploaded and the interface previews it through its public link. Metadata stripping, thumbnails and AVIF follow in M5.
+> Since M5 the sequence runs as shown, except the quota check and the audit entry, which arrive in M9.
 
 ## First sign-in with a start password
 

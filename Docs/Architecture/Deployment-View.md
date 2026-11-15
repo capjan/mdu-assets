@@ -33,7 +33,7 @@ App --> Data
 | Element | Description |
 | --- | --- |
 | Reverse proxy | Obtains certificates, forwards both host names, sets `X-Forwarded-*`. The server trusts only configured proxy addresses. |
-| Container | Image based on `runtime-deps` chiseled, non-root user, the AOT program; libvips joins with image processing (M5). Built per architecture on native runners. |
+| Container | Image based on `runtime-deps` chiseled, non-root user, the AOT program and libvips (`libvips.so.42`, about 18 MB, from NetVips.Native) next to it. Built per architecture on native runners. |
 | Volume `/data` | All state of the instance. Nothing else needs a backup. |
 | Configuration | Environment variables `MDU_ASSETS_*`, see the table below, and the standard `ASPNETCORE_HTTP_PORTS` (`8080` in the image). The server checks them on start and stops with a message that names the wrong setting. |
 | Health check | `GET /healthz` answers `Healthy` when the database answers. The chiseled image has no shell or curl, so container health checks run from outside, for example from the reverse proxy or monitoring. |
@@ -51,6 +51,10 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 | `MDU_ASSETS_MAXUPLOADBYTES` | `20971520` (20 MB) | Largest upload |
 | `MDU_ASSETS_MAXPIXELS` | `50000000` | Largest image in pixels, checked before decoding |
 | `MDU_ASSETS_PUBLICMAXAGESECONDS`, `MDU_ASSETS_PUBLICSTALEWHILEREVALIDATESECONDS` | `300`, `86400` | Caching of public links |
+| `MDU_ASSETS_WIDTHS` | `320,640,800,1024,1280,1600,2048` | Widths `?w=` may ask for; others snap to the next larger one |
+| `MDU_ASSETS_THUMBNAILSIZE` | `480` | Longer side of previews in the web interface |
+| `MDU_ASSETS_IMAGEJOBS` | half the processors | Image jobs (cleaning, previews, widths, conversion) at the same time |
+| `MDU_ASSETS_AVIFWORKERS` | `1` | Background workers for AVIF copies; `0` turns AVIF off |
 
 ## Data directory
 
