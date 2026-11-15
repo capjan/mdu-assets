@@ -1,7 +1,7 @@
 // MDU Asset Server web interface. Plain JavaScript on the JSON API, no build step (ADR-0007).
 // This module runs the project page and picks the page to show; the other pages live in pages.js.
 import {
-    $, api, announce, copyText, element, flashCopied, recentUse, formatSize, numberFormat,
+    $, api, announce, copyText, setUpUserMenu, element, flashCopied, recentUse, formatSize, numberFormat,
     bindLosslessToggle, dateFormat, losslessQuery, openDialog, plural, readSetting, request, send, writeSetting,
 } from "./common.js";
 import { replaceWithFile, showDetails } from "./details.js";
@@ -79,7 +79,7 @@ async function load() {
         for (const card of state.cards.values()) card.refresh?.();
     }));
     $("user-name").textContent = me.name;
-    $("admin-link").hidden = !me.isAdmin;
+    $("admin-link").closest("li").hidden = !me.isAdmin;
     $("new-project-link").hidden = !me.canCreateProjects;
 
     // A start password blocks everything else until it is changed (AUTH-05).
@@ -1116,6 +1116,7 @@ document.addEventListener("drop", (event) => {
     uploadFiles(event.dataTransfer.files);
 });
 
+setUpUserMenu();
 load().catch((error) => {
     showPage("project");
     $("project-toolbar").hidden = true;

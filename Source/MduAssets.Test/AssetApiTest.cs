@@ -178,7 +178,11 @@ public sealed class AssetApiTest : IDisposable
     [InlineData("Origin", "http://ui.test")]
     public async Task AcceptsChangesFromTheWebInterface(string header, string value)
     {
-        var client = _server.Ui();
+        // The web interface signs in with a session; browsers send these headers with every change.
+        var client = _server.Browser();
+        var signIn = await client.PostAsJsonAsync("/api/v1/session", new MduAssets.Security.SignInRequest(TestServer.AdminName, TestServer.AdminPassword),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, signIn.StatusCode);
         client.DefaultRequestHeaders.Add(header, value);
         var content = new ByteArrayContent(SampleImages.Png(2, 2));
         content.Headers.ContentType = new MediaTypeHeaderValue("image/png");

@@ -31,7 +31,7 @@ Der Server ergänzt lokale Bilder in MDU-Projekten, er ersetzt sie nicht. Markdo
 | Speicher | Dateisystem für Dateien, SQLite für Metadaten, ein Volume |
 | Projektrollen | Owner / Editor / Viewer |
 | API-Anmeldung | Persönliche API-Tokens (benannt, mit Ablauf, optional auf ein Projekt beschränkt, widerrufbar) |
-| Web-Anmeldung | Zuerst Basic Auth; später Login-Formular mit Session, OIDC/SSO und Passkeys |
+| Web-Anmeldung | Eigene Anmeldeseite mit Session-Cookie; später OIDC/SSO und Passkeys |
 | Benutzeranlage | Nur durch Admins; der erste Admin wird beim Start über Umgebungsvariablen angelegt |
 | Snippets | Markdown mit Alt-Text, Hell/Dunkel-Paar, MDU-Attribute, reine URL und HTML |
 | Bildverarbeitung | Metadaten entfernen, Format direkt nach dem Upload wählen (WebP), Vorschaubilder, Größen per Parameter; mit NetVips/libvips |
@@ -78,7 +78,7 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 
 | ID | Anforderung | Prio |
 | --- | --- | :-: |
-| AUTH-01 | Die Web-UI und die API akzeptieren HTTP Basic Auth mit Benutzername und Passwort. Basic Auth wird nur über HTTPS akzeptiert (direkt oder hinter einem Reverse Proxy mit `X-Forwarded-Proto`). | M |
+| AUTH-01 | Die Web-UI hat eine eigene Anmeldeseite mit Benutzername und Passwort; ein Menü hinter dem Benutzernamen enthält Konto, Admin und Abmelden. Werkzeuge melden sich an der API mit HTTP Basic Auth oder einem API-Token an; Browser bekommen nie die Basic-Auth-Abfrage. Passwörter werden nur über HTTPS akzeptiert (direkt oder hinter einem Reverse Proxy mit `X-Forwarded-Proto`). | M |
 | AUTH-02 | Passwörter werden mit PBKDF2 (SHA-256, mindestens 600 000 Iterationen, zufälliges Salt) gespeichert. | M |
 | AUTH-03 | Beim ersten Start ohne Benutzer wird ein Admin aus `MDU_ASSETS_ADMIN_USER` und `MDU_ASSETS_ADMIN_PASSWORD` angelegt. Fehlen die Variablen, startet der Server mit einer klaren Fehlermeldung. | M |
 | AUTH-04 | Admins legen Benutzer mit Startpasswort an, sperren, entsperren, setzen Passwörter zurück und vergeben die Admin-Rolle. Der letzte Admin kann nicht entfernt oder gesperrt werden. | M |
@@ -86,7 +86,7 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 | AUTH-06 | Benutzer erzeugen persönliche API-Tokens mit Name, Ablaufdatum (Standard 90 Tage, „nie“ wählbar) und optionaler Beschränkung auf ein Projekt und auf Lese- oder Schreibrechte. Das Token wird nur einmal angezeigt und nur gehasht gespeichert. Die Liste zeigt Name, Präfix, Ablauf und letzte Nutzung. | M |
 | AUTH-07 | Tokens werden als `Authorization: Bearer <token>` übergeben. Ein Token hat höchstens die Rechte seines Benutzers. | M |
 | AUTH-08 | Fehlgeschlagene Anmeldungen werden pro Benutzer und IP begrenzt (Rate Limiting, siehe OPS-05). | M |
-| AUTH-09 | Login-Formular im MDU-Design mit Session-Cookie (`HttpOnly`, `Secure`, `SameSite=Lax`), Abmelden und CSRF-Schutz für die UI. | L |
+| AUTH-09 | Session-Cookie (`HttpOnly`, `Secure`, `SameSite=Strict`), wahlweise „angemeldet bleiben“; Sperren, Löschen und Passwortwechsel beenden die Sessions des Benutzers sofort; Schutz vor Anfragen fremder Seiten ([ADR-0021](Architecture/Architecture-Decisions/0021-Sign-In-Page-and-Session-Cookie.md)). | M |
 | AUTH-10 | Anmeldung über OIDC (z. B. GitHub, Entra ID, Keycloak) mit Zuordnung zu bestehenden Benutzern. | L |
 | AUTH-11 | Anmeldung mit Passkeys (WebAuthn). | L |
 
@@ -184,7 +184,7 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 
 | ID | Anforderung | Prio |
 | --- | --- | :-: |
-| API-01 | JSON-API unter `/api/v1`, angemeldet über Basic Auth oder API-Token. Jede UI-Funktion ist über die API verfügbar; die UI nutzt ausschließlich diese API. | M |
+| API-01 | JSON-API unter `/api/v1`, angemeldet über die Session der Web-UI, Basic Auth oder API-Token. Jede UI-Funktion ist über die API verfügbar; die UI nutzt ausschließlich diese API. | M |
 | API-02 | Die API wird als OpenAPI-Dokument unter `/api/v1/openapi.json` beschrieben, das sich mit MDU als API-Referenz rendern lässt. | M |
 | API-03 | Fehler werden einheitlich als `application/problem+json` (RFC 9457) gemeldet. | M |
 | API-04 | Der Upload-Endpunkt akzeptiert `multipart/form-data` und den Rohinhalt im Body (`Content-Type: image/png`, Dateiname per `?name=`), damit auch einfache Tools wie `curl --data-binary` oder ShareX funktionieren. | M |
@@ -319,7 +319,7 @@ AuditEntry(id, at, user_id?, project_id?, action, target, details_json, ip)
 | R-03 | Öffentliche Bilder mit nicht erratbaren IDs sind keine Zugriffskontrolle; einmal geteilte Links lassen sich nicht zurückholen. | In UI und Doku klar benennen; Löschen liefert sofort 410. |
 | R-04 | SVG-Uploads sind ein XSS-Vektor. | Bereinigung (UP-07), CSP mit `sandbox` (DLV-05), getrennter Host (LNK-04). |
 | R-05 | Abrufzahlen sind durch Caches und CDNs systematisch zu niedrig. | Kurze `max-age` (DLV-02), Grenze in der UI erklären. |
-| R-06 | Basic Auth erlaubt kein sauberes Abmelden im Browser. | Bewusst akzeptiert bis Stufe 2. |
+| R-06 | Basic Auth erlaubt kein sauberes Abmelden im Browser. | Erledigt: Anmeldeseite mit Session ([ADR-0021](Architecture/Architecture-Decisions/0021-Sign-In-Page-and-Session-Cookie.md)). |
 
 ## 12. Offene Fragen
 

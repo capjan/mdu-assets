@@ -74,13 +74,8 @@ public static class BackupCommand
             }
         }
 
-        // The data protection keys belong to the instance as well.
-        if (Directory.Exists(source.KeysPath))
-        {
-            Directory.CreateDirectory(copy.KeysPath);
-            foreach (var key in Directory.EnumerateFiles(source.KeysPath))
-                File.Copy(key, Path.Combine(copy.KeysPath, Path.GetFileName(key)));
-        }
+        // The data protection keys stay out on purpose (ADR-0021): with them, anybody holding a copy could make session
+        // cookies for the running instance. A restored instance makes new keys, and everybody signs in again.
 
         Console.WriteLine($"Backed up the database and {count:N0} files ({bytes:N0} bytes) to {copy.Root}.");
         return 0;

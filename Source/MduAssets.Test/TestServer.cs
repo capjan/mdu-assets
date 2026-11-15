@@ -66,6 +66,10 @@ public sealed class TestServer : IDisposable
         return client;
     }
 
+    /// <summary>A browser on the UI host: no credentials, keeps cookies and does not follow redirects, so they can be checked.</summary>
+    public HttpClient Browser() =>
+        _factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://ui.test"), AllowAutoRedirect = false, HandleCookies = true });
+
     /// <summary>A client for the public link host, without credentials.</summary>
     public HttpClient Public() =>
         _factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://img.test") });

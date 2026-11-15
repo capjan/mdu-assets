@@ -216,6 +216,7 @@ public sealed record ServerInfo(string UiBaseUrl, string PublicBaseUrl, long Max
 [JsonSerializable(typeof(MemberList))]
 [JsonSerializable(typeof(MemberChange))]
 [JsonSerializable(typeof(MeResponse))]
+[JsonSerializable(typeof(MduAssets.Security.SignInRequest))]
 [JsonSerializable(typeof(PasswordChange))]
 [JsonSerializable(typeof(UserResponse))]
 [JsonSerializable(typeof(UserList))]

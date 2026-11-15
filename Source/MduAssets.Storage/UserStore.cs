@@ -33,6 +33,17 @@ public sealed class UserStore(Database database)
         return users;
     }
 
+    /// <summary>Finds a user by id, for example the one a session belongs to.</summary>
+    public User? FindById(long id)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = Select + " WHERE id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? Read(reader) : null;
+    }
+
     /// <summary>Finds a user by name, ignoring case.</summary>
     public User? Find(string name)
     {

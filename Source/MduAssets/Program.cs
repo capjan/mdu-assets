@@ -73,6 +73,7 @@ builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<TokenStore>();
 builder.Services.AddSingleton<AuditStore>();
 builder.Services.AddSingleton<SignInThrottle>();
+builder.Services.AddSingleton<PasswordCheck>();
 builder.Services.AddSingleton<NotFoundThrottle>();
 builder.Services.AddSingleton<AssetStore>();
 builder.Services.AddSingleton<VariantStore>();
@@ -96,9 +97,11 @@ builder.Services.ConfigureHttpJsonOptions(json => json.SerializerOptions.TypeInf
 builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(settings.ApplyTo);
 // ASP.NET Core keeps its data protection keys in the data directory, so they survive container restarts.
 builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(dataDirectory.KeysPath));
+// Browsers sign in on the sign-in page and get a session cookie; tools send Basic credentials or an API token (ADR-0021).
 builder.Services
-    .AddAuthentication(BasicAuthenticationHandler.SchemeName)
-    .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>(BasicAuthenticationHandler.SchemeName, null);
+    .AddAuthentication(Sessions.SelectorScheme)
+    .AddScheme<AuthenticationSchemeOptions, BasicAuthenticationHandler>(BasicAuthenticationHandler.SchemeName, null)
+    .AddSessions(settings);
 builder.Services.AddAuthorization();
 // The public check endpoint answers anybody, so it is limited per client address (API-06).
 builder.Services.AddRateLimiter(limiter =>
@@ -162,9 +165,19 @@ UserEndpoints.Map(api, admin);
 AuditEndpoints.Map(api, admin);
 TransferEndpoints.Map(api);
 
-// Web interface: only on the UI host, signed in, so the browser asks for the password on the first visit.
-var ui = app.MapGroup("").RequireHost(settings.UiHost).RequireAuthorization();
-ui.MapGet("/", (UiFiles files, HttpContext context) => files.Serve("index.html", context)).ExcludeFromDescription();
+// Sign-in and sign-out for the web interface; every other API call needs a session, Basic credentials or a token.
+Sessions.Map(app, settings);
+
+// Web interface: only on the UI host. Without a session the page sends the browser to the sign-in page, which comes back
+// to the same address afterwards. Scripts and styles load without a session; they hold no data.
+var ui = app.MapGroup("").RequireHost(settings.UiHost);
+ui.MapGet("/", (UiFiles files, HttpContext context) => context.User.Identity?.IsAuthenticated == true
+    ? files.Serve("index.html", context)
+    : Results.Redirect(context.Request.QueryString.HasValue ? $"/login?return={Uri.EscapeDataString("/" + context.Request.QueryString)}" : "/login"))
+    .ExcludeFromDescription();
+ui.MapGet("/login", (UiFiles files, HttpContext context) => context.User.Identity?.IsAuthenticated == true
+    ? Results.Redirect("/")
+    : files.Serve("login.html", context)).ExcludeFromDescription();
 ui.MapGet("/ui/{**path}", (string path, UiFiles files, HttpContext context) => files.Serve(path, context)).ExcludeFromDescription();
 
 if (createdAdmin is not null)

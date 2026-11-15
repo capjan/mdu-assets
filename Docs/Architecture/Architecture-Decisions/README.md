@@ -16,7 +16,7 @@ Each significant, hard-to-reverse decision is recorded as one file in the [MADR]
 | [0005](0005-SQLite-and-Content-Addressed-Files.md) | SQLite for metadata, content-addressed files on disk | Accepted |
 | [0006](0006-NetVips-for-Image-Processing.md) | NetVips/libvips for image processing | Accepted |
 | [0007](0007-Static-UI-on-the-JSON-API.md) | Web interface as embedded static files on the JSON API | Accepted |
-| [0008](0008-Basic-Auth-and-API-Tokens.md) | Basic Auth first, personal API tokens for tools | Accepted |
+| [0008](0008-Basic-Auth-and-API-Tokens.md) | Basic Auth first, personal API tokens for tools | Accepted; the browser part superseded by 0021 |
 | [0009](0009-Separate-Public-Host.md) | Serve public links from a separate host | Accepted |
 | [0010](0010-MDU-Design-Tokens.md) | Copy the MDU design tokens with a drift test | Accepted |
 | [0011](0011-AVIF-in-the-Background.md) | Encode AVIF variants in the background | Superseded by 0019 |
@@ -29,6 +29,7 @@ Each significant, hard-to-reverse decision is recorded as one file in the [MADR]
 | [0018](0018-Import-Id-Collisions.md) | Imports keep free ids and map the others to new ones | Accepted |
 | [0019](0019-Format-Chosen-on-Upload.md) | Choose WebP once after upload, keep the original, no negotiation by `Accept` | Accepted |
 | [0020](0020-Tags-Instead-of-Folders.md) | Tags replace folders; existing folders become tags | Accepted |
+| [0021](0021-Sign-In-Page-and-Session-Cookie.md) | Sign-in page with a session cookie; Basic credentials only for tools | Accepted |
 
 ## Template
 

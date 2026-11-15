@@ -202,6 +202,8 @@ public sealed class OperationsTest : IDisposable
         {
             Assert.Equal(0, BackupCommand.Run(server.DataDirectory, target));
             Assert.Equal(1, BackupCommand.Run(server.DataDirectory, target));
+            // Keys would let a stolen backup make session cookies for the running instance.
+            Assert.False(Directory.Exists(Path.Combine(target, "keys")) && Directory.EnumerateFiles(Path.Combine(target, "keys")).Any());
 
             var restored = Server(new() { ["DataDirectory"] = target });
             Assert.Equal(await server.Public().GetByteArrayAsync(asset.Url, Cancel), await restored.Public().GetByteArrayAsync(asset.Url, Cancel));
