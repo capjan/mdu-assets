@@ -324,6 +324,39 @@
             </form>
             <p class="notice" id="password-done" hidden tabindex="-1">Password changed. Your browser still remembers the old one, so it asks for the new password on the next request. <a href="/">Continue</a></p>
         </section>
+        <section class="panel" aria-labelledby="tokens-heading" id="tokens-panel">
+            <h2 id="tokens-heading">API tokens</h2>
+            <p class="form-hint">Tokens let tools such as ShareX, curl or scripts upload and read images in your name, without your password. A token can be limited to one project and to reading.</p>
+            <div class="table-wrapper" id="token-table" hidden>
+                <table class="data-table">
+                    <thead><tr><th scope="col">Name</th><th scope="col">Access</th><th scope="col">Expires</th><th scope="col">Last used</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody id="token-rows"></tbody>
+                </table>
+            </div>
+            <form class="form form-inline" id="token-form">
+                <label class="field"><span>Name</span><input id="token-name" type="text" required maxlength="100" autocomplete="off" placeholder="ShareX on my laptop"></label>
+                <label class="field"><span>Project</span><select id="token-project"><option value="">All my projects</option></select></label>
+                <label class="field"><span>Access</span><select id="token-scope"><option value="write">Upload and read</option><option value="read">Read only</option></select></label>
+                <label class="field"><span>Expires</span><select id="token-expires"><option value="30">In 30 days</option><option value="90" selected>In 90 days</option><option value="365">In a year</option><option value="never">Never</option></select></label>
+                <div class="form-actions"><button class="primary-button" type="submit">Create token</button></div>
+            </form>
+            <div class="start-password" id="token-created" hidden tabindex="-1">
+                <p><strong>Copy the token now.</strong> It is shown only once; the server keeps only a hash of it.</p>
+                <div class="snippet-output">
+                    <code class="snippet-code" id="token-secret" tabindex="0"></code>
+                    <button class="copy-button" id="token-copy" type="button"><span>Copy</span></button>
+                </div>
+                <h3>Integrations</h3>
+                <label class="field"><span>Upload into project</span><select id="integration-project"></select></label>
+                <p class="form-hint">curl uploads a file and prints the Markdown snippet:</p>
+                <div class="snippet-output">
+                    <code class="snippet-code" id="integration-curl" tabindex="0"></code>
+                    <button class="copy-button" id="integration-curl-copy" type="button"><span>Copy</span></button>
+                </div>
+                <p class="form-hint">ShareX uploads screenshots and copies the Markdown snippet. Open the file with ShareX to add it as an image uploader.</p>
+                <div class="form-actions"><a class="secondary-button" id="integration-sharex" href="#" download="mdu-assets.sxcu">Download ShareX configuration</a></div>
+            </div>
+        </section>
     </div>
 
     <div id="page-admin" hidden>

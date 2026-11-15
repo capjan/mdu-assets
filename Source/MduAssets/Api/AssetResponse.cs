@@ -166,6 +166,21 @@ public sealed record StartPasswordResponse(UserResponse User, string StartPasswo
 
 public sealed record UserChanges(bool? IsAdmin, bool? IsLocked);
 
+/// <summary>A personal API token as listed; the secret is never shown again.</summary>
+public sealed record TokenResponse(long Id, string Name, string Prefix, string? Project, string Scope, DateTimeOffset? ExpiresAt, DateTimeOffset? LastUsedAt, DateTimeOffset CreatedAt)
+{
+    public static TokenResponse From(ApiToken token) =>
+        new(token.Id, token.Name, token.Prefix, token.ProjectSlug, token.Scope, token.ExpiresAt, token.LastUsedAt, token.CreatedAt);
+}
+
+public sealed record TokenList(IReadOnlyList<TokenResponse> Items);
+
+/// <summary>A new token: <c>Expires</c> is a number of days (default 90) or <c>never</c>; <c>Scope</c> is read or write (default).</summary>
+public sealed record NewToken(string? Name, string? Expires, string? Project, string? Scope);
+
+/// <summary>The answer to a new token, with the secret that is shown only now.</summary>
+public sealed record TokenCreated(TokenResponse Token, string Secret);
+
 public sealed record SettingsResponse(bool UsersCanCreateProjects);
 
 public sealed record SettingsChanges(bool? UsersCanCreateProjects);
@@ -217,6 +232,11 @@ public sealed record ServerInfo(string UiBaseUrl, string PublicBaseUrl, long Max
 [JsonSerializable(typeof(StartPasswordResponse))]
 [JsonSerializable(typeof(UserChanges))]
 [JsonSerializable(typeof(SettingsResponse))]
+[JsonSerializable(typeof(TokenList))]
+[JsonSerializable(typeof(CheckRequest))]
+[JsonSerializable(typeof(CheckResponse))]
+[JsonSerializable(typeof(NewToken))]
+[JsonSerializable(typeof(TokenCreated))]
 [JsonSerializable(typeof(SettingsChanges))]
 [JsonSerializable(typeof(OverviewResponse))]
 [JsonSerializable(typeof(ProblemDetails))]

@@ -10,6 +10,9 @@ namespace MduAssets.Security;
 public static class Caller
 {
     public const string MustChangePasswordClaim = "mdu:must-change-password";
+    public const string TokenClaim = "mdu:token";
+    public const string TokenScopeClaim = "mdu:token-scope";
+    public const string TokenProjectClaim = "mdu:token-project";
 
     public static long Id(this ClaimsPrincipal user) =>
         long.Parse(user.FindFirstValue(ClaimTypes.NameIdentifier)!, CultureInfo.InvariantCulture);
@@ -17,6 +20,16 @@ public static class Caller
     public static bool IsAdmin(this ClaimsPrincipal user) => user.IsInRole(BasicAuthenticationHandler.AdminRole);
 
     public static bool MustChangePassword(this ClaimsPrincipal user) => user.HasClaim(MustChangePasswordClaim, "true");
+
+    /// <summary>Whether the request came with an API token rather than a password.</summary>
+    public static bool UsesToken(this ClaimsPrincipal user) => user.HasClaim(c => c.Type == TokenClaim);
+
+    /// <summary>Whether the token may only read.</summary>
+    public static bool ReadOnlyToken(this ClaimsPrincipal user) => user.HasClaim(TokenScopeClaim, "read");
+
+    /// <summary>The project a token is limited to, or <c>null</c>.</summary>
+    public static long? TokenProject(this ClaimsPrincipal user) =>
+        user.FindFirstValue(TokenProjectClaim) is { } value ? long.Parse(value, CultureInfo.InvariantCulture) : null;
 }
 
 /// <summary>
@@ -27,8 +40,14 @@ public static class Caller
 public sealed class ProjectAccess(ProjectStore projects)
 {
     /// <summary>The caller's role in a project: their membership, or owner for admins, or <c>null</c>.</summary>
-    public ProjectRole? RoleOf(ClaimsPrincipal user, long projectId) =>
-        user.IsAdmin() ? ProjectRole.Owner : projects.RoleOf(projectId, user.Id());
+    public ProjectRole? RoleOf(ClaimsPrincipal user, long projectId)
+    {
+        // A token never has more than its user: other projects are invisible to a project token, and read tokens only read.
+        if (user.TokenProject() is { } only && only != projectId)
+            return null;
+        var role = user.IsAdmin() ? ProjectRole.Owner : projects.RoleOf(projectId, user.Id());
+        return role is { } r && user.ReadOnlyToken() ? (ProjectRole)Math.Min((int)r, (int)ProjectRole.Viewer) : role;
+    }
 
     /// <summary>Finds a project by slug and checks that the caller has at least <paramref name="needed"/>.</summary>
     public bool TryGet(ClaimsPrincipal user, string slug, ProjectRole needed,

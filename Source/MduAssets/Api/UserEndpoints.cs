@@ -11,7 +11,10 @@ public static class UserEndpoints
     public static void Map(RouteGroupBuilder api, RouteGroupBuilder admin)
     {
         api.MapGet("/me", Me).AllowWithStartPassword();
-        api.MapPost("/me/password", ChangePassword).AllowWithStartPassword();
+        api.MapPost("/me/password", ChangePassword).AllowWithStartPassword().RequirePassword();
+        api.MapGet("/me/tokens", Tokens).RequirePassword();
+        api.MapPost("/me/tokens", CreateToken).RequirePassword();
+        api.MapDelete("/me/tokens/{id:long}", DeleteToken).RequirePassword();
 
         admin.MapGet("/users", List);
         admin.MapPost("/users", Create);
@@ -42,6 +45,52 @@ public static class UserEndpoints
         users.SetPassword(account.Id, PasswordHasher.Hash(change.NewPassword), mustChange: false);
         return TypedResults.NoContent();
     }
+
+    private static TokenList Tokens(ClaimsPrincipal user, TokenStore tokens) => new(tokens.List(user.Id()).Select(TokenResponse.From).ToList());
+
+    /// <summary>
+    /// Creates a personal API token (AUTH-06): named, valid for 90 days unless <c>expires</c> says otherwise (a number of days or
+    /// <c>never</c>), optionally limited to one project and to reading. The secret is in this answer only.
+    /// </summary>
+    private static Results<Created<TokenCreated>, ProblemHttpResult> CreateToken(
+        NewToken request, ClaimsPrincipal user, TokenStore tokens, ProjectAccess access, TimeProvider time)
+    {
+        var name = request.Name?.Trim() ?? string.Empty;
+        if (name.Length is 0 or > 100)
+            return Invalid("Invalid name", "A token name has 1 to 100 characters, for example ShareX on my laptop.");
+        var scope = request.Scope ?? "write";
+        if (scope is not ("read" or "write"))
+            return Invalid("Invalid scope", "The scope is read or write.");
+        DateTimeOffset? expires = time.GetUtcNow().AddDays(90);
+        if (request.Expires is "never")
+            expires = null;
+        else if (request.Expires is { } days)
+        {
+            if (!int.TryParse(days, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var count) || count is < 1 or > 3650)
+                return Invalid("Invalid expiry", "Expires is a number of days from 1 to 3650, or never.");
+            expires = time.GetUtcNow().AddDays(count);
+        }
+
+        long? projectId = null;
+        if (!string.IsNullOrEmpty(request.Project))
+        {
+            if (!access.TryGet(user, request.Project, ProjectRole.Viewer, out var project, out var problem))
+                return problem;
+            projectId = project.Id;
+        }
+
+        var secret = TokenStore.NewSecret();
+        var token = tokens.Create(user.Id(), name, secret, projectId, scope, expires);
+        return TypedResults.Created($"/api/v1/me/tokens/{token.Id}", new TokenCreated(TokenResponse.From(token), secret));
+    }
+
+    private static Results<NoContent, ProblemHttpResult> DeleteToken(long id, ClaimsPrincipal user, TokenStore tokens) =>
+        tokens.Delete(user.Id(), id)
+            ? TypedResults.NoContent()
+            : TypedResults.Problem($"There is no token {id}.", statusCode: StatusCodes.Status404NotFound, title: "Unknown token");
+
+    private static ProblemHttpResult Invalid(string title, string detail) =>
+        TypedResults.Problem(detail, statusCode: StatusCodes.Status400BadRequest, title: title);
 
     private static UserList List(UserStore users) => new(users.List().Select(UserResponse.From).ToList());
 

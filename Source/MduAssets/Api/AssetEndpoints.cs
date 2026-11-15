@@ -266,11 +266,14 @@ public static class AssetEndpoints
 /// <summary>Reads the asset id from a public link (LNK-09).</summary>
 public static class PublicLinkIds
 {
-    public static string? Extract(string? input)
+    public static string? Extract(string? input) => ExtractWithVersion(input)?.Id;
+
+    /// <summary>The asset id and, for a version link <c>/i/<id>/v<n>/…</c>, the version.</summary>
+    public static (string Id, int? Version)? ExtractWithVersion(string? input)
     {
         var text = input?.Trim() ?? string.Empty;
         if (AssetId.IsValid(text))
-            return text;
+            return (text, null);
 
         // Links may start without a scheme when copied from Markdown source; only the path matters.
         if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
@@ -283,8 +286,13 @@ public static class PublicLinkIds
         var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         for (var i = 0; i + 1 < segments.Length; i++)
         {
-            if (segments[i] == "i" && AssetId.IsValid(segments[i + 1]))
-                return segments[i + 1];
+            if (segments[i] != "i" || !AssetId.IsValid(segments[i + 1]))
+                continue;
+            int? version = null;
+            if (i + 2 < segments.Length && segments[i + 2].Length > 1 && segments[i + 2][0] == 'v' &&
+                int.TryParse(segments[i + 2].AsSpan(1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number))
+                version = number;
+            return (segments[i + 1], version);
         }
 
         return null;

@@ -122,10 +122,12 @@ export function showNewProject() {
 }
 
 // Account: change the password; with a start password this is the only page (AUTH-05).
-export function showAccount(me, { forced = false } = {}) {
+export function showAccount(me, { forced = false, projects = [] } = {}) {
     document.title = "Account – MDU Assets";
     $("account-summary").textContent = `Signed in as ${me.name}${me.isAdmin ? ", admin" : ""}.`;
     $("start-password-notice").hidden = !forced;
+    $("tokens-panel").hidden = forced;
+    if (!forced) setUpTokens(projects);
     $("password-user").value = me.name;
     if (forced) {
         // Nothing else works until the password is changed, so the navigation is hidden.
@@ -343,4 +345,98 @@ export async function showTrash(project, { owner }) {
         }
     });
     await render();
+}
+
+// Personal API tokens and ready-made integrations (AUTH-06, API-07).
+function setUpTokens(projects) {
+    const projectName = (slug) => projects.find((p) => p.slug === slug)?.name ?? slug;
+    $("token-project").append(...projects.map((p) => element("option", { value: p.slug, text: p.name })));
+
+    const render = async () => {
+        const tokens = (await request("/me/tokens")).items;
+        $("token-table").hidden = tokens.length === 0;
+        $("token-rows").replaceChildren(...tokens.map((token) => {
+            const revoke = element("button", { class: "secondary-button", type: "button", text: "Revoke", "aria-label": `Revoke ${token.name}` });
+            revoke.addEventListener("click", async () => {
+                if (!await openDialog({
+                    title: `Revoke ${token.name}?`,
+                    text: "Tools that use this token stop working at once. This cannot be undone.",
+                    confirmLabel: "Revoke token", danger: true,
+                })) return;
+                try {
+                    await send(`/me/tokens/${token.id}`, "DELETE");
+                    await render();
+                    $("token-name").focus();
+                    announce(`Revoked ${token.name}.`);
+                } catch (error) {
+                    announce(error.message);
+                }
+            });
+            const expired = token.expiresAt && Date.parse(token.expiresAt) <= Date.now();
+            return element("tr", {}, [
+                element("td", {}, [token.name, element("span", { class: "badge", text: `${token.prefix}…` })]),
+                element("td", { text: `${token.scope === "read" ? "Read only" : "Upload and read"}, ${token.project ? projectName(token.project) : "all projects"}` }),
+                element("td", { text: token.expiresAt ? `${expired ? "Expired " : ""}${shortDateFormat.format(new Date(token.expiresAt))}` : "Never" }),
+                element("td", { text: token.lastUsedAt ? dateFormat.format(new Date(token.lastUsedAt)) : "Not yet" }),
+                element("td", {}, [element("div", { class: "row-actions" }, [revoke])]),
+            ]);
+        }));
+    };
+
+    let secret = "";
+    const integrations = () => {
+        const project = $("integration-project").value;
+        const uploadUrl = `${location.origin}/api/v1/projects/${encodeURIComponent(project)}/assets`;
+        $("integration-curl").textContent =
+            `curl -sS -H "Authorization: Bearer ${secret}" -H "Content-Type: image/png" --data-binary @screenshot.png "${uploadUrl}?name=screenshot.png" | sed -n 's/.*"markdown":"\\([^"]*\\)".*/\\1/p'`;
+        // ShareX custom uploader: multipart upload, the Markdown snippet goes to the clipboard.
+        const sharex = {
+            Version: "16.0.0",
+            Name: `MDU Assets – ${projectName(project)}`,
+            DestinationType: "ImageUploader",
+            RequestMethod: "POST",
+            RequestURL: uploadUrl,
+            Headers: { Authorization: `Bearer ${secret}`, Accept: "application/json" },
+            Body: "MultipartFormData",
+            FileFormName: "file",
+            URL: "{json:markdown}",
+            ThumbnailURL: "{json:url}",
+            ErrorMessage: "{json:detail}",
+        };
+        const link = $("integration-sharex");
+        URL.revokeObjectURL(link.href);
+        link.href = URL.createObjectURL(new Blob([JSON.stringify(sharex, null, 2)], { type: "application/json" }));
+        link.download = `mdu-assets-${project}.sxcu`;
+    };
+    $("integration-project").addEventListener("change", integrations);
+
+    const form = $("token-form");
+    handleSubmit(form, async () => {
+        clearFormError(form);
+        const project = $("token-project").value;
+        const created = await send("/me/tokens", "POST", {
+            name: $("token-name").value, project: project || null, scope: $("token-scope").value, expires: $("token-expires").value,
+        });
+        secret = created.secret;
+        $("token-secret").textContent = secret;
+        const choices = project ? projects.filter((p) => p.slug === project) : projects.filter((p) => ["editor", "owner"].includes(p.role));
+        $("integration-project").replaceChildren(...choices.map((p) => element("option", { value: p.slug, text: p.name })));
+        $("integration-project").closest(".field").hidden = choices.length < 2;
+        const uploads = created.token.scope === "write" && choices.length > 0;
+        for (const id of ["integration-curl", "integration-sharex"]) $(id).closest(".snippet-output, .form-actions").hidden = !uploads;
+        if (uploads) integrations();
+        $("token-name").value = "";
+        $("token-created").hidden = false;
+        $("token-created").focus();
+        await render();
+        announce(`Created ${created.token.name}. Copy the token now; it is shown only once.`);
+    });
+    for (const [button, source] of [["token-copy", "token-secret"], ["integration-curl-copy", "integration-curl"]]) {
+        $(button).addEventListener("click", async () => {
+            const ok = await copyText($(source).textContent);
+            flashCopied($(button), ok);
+            announce(ok ? "Copied to the clipboard." : "Copying failed. Select the text and copy it.");
+        });
+    }
+    render();
 }

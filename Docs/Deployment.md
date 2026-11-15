@@ -137,12 +137,21 @@ The short name of a project appears in API paths and never changes; renaming a p
 
 ## Upload from the command line
 
+Create a personal API token on the **Account** page; it can be limited to one project and to reading, and the page offers a ready ShareX configuration and this curl command for it:
+
+```bash
+curl -H "Authorization: Bearer mdua_…" -H "Content-Type: image/png" --data-binary @screenshot.png \
+  "https://assets.example.com/api/v1/projects/default/assets?name=screenshot.png"
+```
+
+With a password instead of a token:
+
 ```bash
 curl -u admin -H "Content-Type: image/png" --data-binary @screenshot.png \
   "https://assets.example.com/api/v1/projects/default/assets?name=screenshot.png"
 ```
 
-The answer contains the public `url`, the `markdown` snippet, and width, height and size. Scripts running in a browser cannot change anything from another site: the server rejects such requests by their `Origin` and `Sec-Fetch-Site` headers.
+The answer contains the public `url`, the `markdown` snippet, and width, height and size. The whole API is described at `https://assets.example.com/api/v1/openapi.json`. Scripts running in a browser cannot change anything from another site: the server rejects such requests by their `Origin` and `Sec-Fetch-Site` headers.
 
 ## Update
 
