@@ -3,6 +3,7 @@ import {
     $, announce, bindLosslessToggle, clearFormError, copyText, dateFormat, losslessQuery, element, flashCopied, folderOptions, formatSize, handleSubmit,
     numberFormat, openDialog, plural, readSetting, recentUse, request, send, writeSetting,
 } from "./common.js";
+import { enableLightbox } from "./lightbox.js";
 import { buildSnippet, formats, optionControls, readOptions, writeOptions } from "./snippets.js";
 
 const typeNames = {
@@ -140,7 +141,9 @@ export async function showDetails(project, id, { editable: canEdit, onFolderChan
         $("asset-title").textContent = asset.fileName;
         $("asset-summary").textContent = `${asset.width && asset.height ? `${asset.width} × ${asset.height} · ` : ""}${formatSize(asset.size)}`;
         // The version link changes with each version, so a replaced image shows at once despite browser caches.
-        preview.replaceChildren(element("img", { src: asset.versionUrl, alt: asset.altText }));
+        const image = element("img", { src: asset.versionUrl, alt: asset.altText });
+        enableLightbox(image);
+        preview.replaceChildren(image);
 
         renderSnippets();
         renderPair();

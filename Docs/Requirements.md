@@ -152,7 +152,7 @@ Priorität: **M** = Muss (erste Version), **S** = Soll (erste Version, darf notf
 | ORG-03 | Freie Tags pro Asset, mit Vorschlägen aus den im Projekt vorhandenen Tags. | M |
 | ORG-04 | Suche über Dateiname, Alt-Text, Beschreibung und Tags; Filter nach Ordner (mit/ohne Unterordner), Tag, Dateityp, Upload-Zeitraum, Uploader und „nie abgerufen“ / „seit N Tagen nicht abgerufen“. | M |
 | ORG-05 | Projektansicht als Kachelraster (Vorschau, Name, Größe, Abrufe) und als Liste mit sortierbaren Spalten (Name, Größe, Abmessungen, Upload, letzter Abruf, Abrufe). | M |
-| ORG-06 | Detailansicht: große Vorschau (hell/dunkel Hintergrund umschaltbar), alle Snippets, Metadaten (Typ, Abmessungen, Größe, Hash, Uploader, Datum), Versionen, Statistik, verweisende Seiten, Hell/Dunkel-Partner. | M |
+| ORG-06 | Detailansicht: große Vorschau (hell/dunkel Hintergrund umschaltbar, per Klick oder Tastatur im Bildbetrachter von MDU mit Zoom und Verschieben), alle Snippets, Metadaten (Typ, Abmessungen, Größe, Hash, Uploader, Datum), Versionen, Statistik, verweisende Seiten, Hell/Dunkel-Partner. | M |
 | ORG-07 | Tastaturbedienung: Pfeiltasten im Raster, ++enter++ öffnet die Details, ++c++ kopiert das Markdown-Snippet des ausgewählten Assets, ++delete++ legt in den Papierkorb. | S |
 
 ### 5.7 Versionen und Papierkorb
