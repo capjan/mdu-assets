@@ -426,7 +426,7 @@ async function applyFilters() {
     history.replaceState(null, "", pageLink());
     renderFilters();
     state.selected.clear();
-    await loadAssets();
+    if (!await loadAssets()) return;
     announce(state.assets.length || !filtered() ? `${plural(state.assets.length, "image", "images")}${state.next ? " or more" : ""} found.` : "No images match.");
 }
 
@@ -449,8 +449,17 @@ async function openLink(text) {
 
 $("search-form").addEventListener("submit", (event) => {
     event.preventDefault();
+    clearTimeout(searchTimer);
     const text = $("search-input").value.trim();
     if (looksLikeLink(text)) openLink(text); else applyFilters();
+});
+// The search runs while typing, after a short pause, so not every key starts a request (ORG-04).
+let searchTimer = 0;
+$("search-input").addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    const text = $("search-input").value.trim();
+    if (looksLikeLink(text) || text === state.filters.q) return;
+    searchTimer = setTimeout(() => applyFilters(), 250);
 });
 $("search-input").addEventListener("paste", (event) => {
     const text = event.clipboardData?.getData("text")?.trim() ?? "";
@@ -487,11 +496,16 @@ function localMidnight(date, addDays = 0) {
     return new Date(year, month - 1, day + addDays).toISOString();
 }
 
+// Only the newest request may show its result: with the search running while typing, answers can overtake each other.
+let assetsRequest = 0;
 async function loadAssets() {
+    const ticket = ++assetsRequest;
     const list = await request(assetsPath());
+    if (ticket !== assetsRequest) return false;
     state.assets = list.items;
     state.next = list.next;
     renderAssets();
+    return true;
 }
 
 $("load-more").addEventListener("click", async () => {
@@ -662,7 +676,9 @@ $("asset-grid").addEventListener("keydown", async (event) => {
     const index = cards.indexOf(link);
     const asset = state.assets.find((a) => a.id === link.dataset.id);
 
-    const columns = Math.max(1, cards.filter((card) => card.offsetTop === cards[0].offsetTop).length);
+    // Cards in the first row share its top edge; offsetTop cannot tell, because every card sits in its own list item.
+    const firstTop = cards[0].getBoundingClientRect().top;
+    const columns = Math.max(1, cards.filter((card) => Math.abs(card.getBoundingClientRect().top - firstTop) < 2).length);
     const target = {
         ArrowRight: index + 1, ArrowLeft: index - 1, ArrowDown: index + columns, ArrowUp: index - columns,
         Home: 0, End: cards.length - 1,
@@ -689,6 +705,37 @@ $("asset-grid").addEventListener("keydown", async (event) => {
         announce(ok ? `Copied the Markdown snippet of ${asset.fileName}.` : "Copying failed. Open the image to copy its snippet.");
     }
 });
+// Keyboard in the list: up and down move between the rows, Home and End to the first and last.
+$("asset-table").addEventListener("keydown", (event) => {
+    const link = event.target.closest?.(".row-button");
+    if (!link || event.altKey || event.ctrlKey || event.metaKey) return;
+    const links = [...$("asset-table").querySelectorAll(".row-button")];
+    const index = links.indexOf(link);
+    const target = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: links.length - 1 }[event.key];
+    if (target === undefined) return;
+    event.preventDefault();
+    links[Math.min(links.length - 1, Math.max(0, target))].focus();
+});
+
+/** The image that keyboard navigation starts from: the remembered one in the grid, or the first row in the list. */
+function firstKeyboardTarget() {
+    return state.view === "grid"
+        ? $("asset-grid").querySelector(".asset-card[tabindex='0']") ?? $("asset-grid").querySelector(".asset-card")
+        : $("asset-table").querySelector(".row-button");
+}
+
+// Arrow keys work right away: with nothing focused, or from the search field with down, they move into the images.
+document.addEventListener("keydown", (event) => {
+    if (!event.key.startsWith("Arrow") || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (document.querySelector("dialog[open]") || $("project-toolbar").closest("[hidden]")) return;
+    const fromSearch = document.activeElement === $("search-input") && event.key === "ArrowDown";
+    if (!fromSearch && document.activeElement !== document.body && document.activeElement !== null) return;
+    const target = firstKeyboardTarget();
+    if (!target || target.closest("[hidden]")) return;
+    event.preventDefault();
+    target.focus();
+});
+
 $("asset-grid").addEventListener("focusin", (event) => {
     const link = event.target.closest?.(".asset-card");
     if (link) state.focusId = link.dataset.id;
