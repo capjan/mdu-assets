@@ -866,6 +866,8 @@ kbd {
 
 .preview-switch button { color: var(--control-rest); }
 
+.preview-switch button:hover { color: var(--control-current); }
+
 .preview-switch [aria-pressed="true"] { border-color: var(--link); color: var(--link); }
 
 .asset-preview {
@@ -1322,7 +1324,7 @@ html:has(.image-lightbox[open]) { overflow: hidden; }
 
 .tag-item .sidebar-link[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-current); font-weight: 600; }
 
-.tag-manage { flex: none; width: 1.75rem; height: 1.75rem; color: var(--text-secondary); opacity: 0; }
+.tag-manage { flex: none; width: 1.75rem; height: 1.75rem; opacity: 0; }
 
 .tag-item:hover .tag-manage,
 .tag-manage:focus-visible { opacity: 1; }
