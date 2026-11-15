@@ -172,13 +172,13 @@ On a server where Traefik already serves other sites, the container joins Traefi
 | `docker-compose.yml` | The service with Traefik labels: two routers, one per host name, both to port 8080, TLS from Traefik's certificate resolver |
 | `deploy.sh` | Builds and starts one commit of `main`, then checks `/healthz` through Traefik |
 
-Adjust the host names, the entry point (`websecure`), the certificate resolver (`mytlschallenge`) and the network (`web`) to your Traefik. `MDU_ASSETS_TRUSTEDPROXIES` is the subnet of that network (`docker network inspect web`); every container in it could claim HTTPS and client addresses, so keep only your own services there.
+The host names come from `UI_HOST` and `PUBLIC_HOST` in `.env`, so they stay on the server and out of the repository and the public Actions log. Adjust the entry point (`websecure`), the certificate resolver (`mytlschallenge`) and the network (`web`) to your Traefik. `MDU_ASSETS_TRUSTEDPROXIES` is the subnet of that network (`docker network inspect web`); every container in it could claim HTTPS and client addresses, so keep only your own services there.
 
 ```bash title="On the VPS"
 mkdir -m 700 ~/container/assets.example.com && cd ~/container/assets.example.com
 git clone https://github.com/capjan/mdu-assets.git source
 cp source/Deploy/traefik/docker-compose.yml source/Deploy/traefik/deploy.sh .
-umask 077 && printf 'ADMIN_USER=admin\nADMIN_PASSWORD=%s\n' "$(head -c 24 /dev/urandom | base64)" > .env
+umask 077 && printf 'UI_HOST=assets.example.com\nPUBLIC_HOST=img.example.com\nADMIN_USER=admin\nADMIN_PASSWORD=%s\n' "$(head -c 24 /dev/urandom | base64)" > .env
 ./deploy.sh "$(git -C source rev-parse origin/main)"
 ```
 
@@ -211,7 +211,6 @@ gh api -X POST repos/OWNER/mdu-assets/environments/production/deployment-branch-
 gh secret set DEPLOY_SSH_KEY --env production < deploykey
 ssh-keyscan -t ed25519 vps.example.com | gh secret set DEPLOY_KNOWN_HOSTS --env production
 printf 'user@vps.example.com' | gh secret set DEPLOY_TARGET --env production
-gh variable set DEPLOY_URL --env production --body https://assets.example.com
 rm deploykey deploykey.pub
 ```
 
