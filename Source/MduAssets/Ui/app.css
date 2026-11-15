@@ -93,7 +93,8 @@ svg { flex: none; }
     border: 1px solid transparent;
     border-radius: 999px;
     background: transparent;
-    color: var(--text-primary);
+    /* Quiet controls (design system, "Steuerelemente"): tool buttons rest quietly and light up when chosen. */
+    color: var(--control-rest);
     font-weight: 500;
     cursor: pointer;
     transition: color 120ms ease, background-color 120ms ease;
@@ -219,11 +220,9 @@ h2 {
 
 .view-switch { display: inline-flex; gap: 0.15rem; margin-left: auto; }
 
-.view-switch .icon-button { color: var(--text-secondary); }
-
 .view-switch .icon-button[aria-pressed="true"] {
-    color: var(--text-primary);
-    background: color-mix(in srgb, var(--text-primary) 10%, var(--page-background));
+    color: var(--control-current);
+    background: var(--control-current-fill);
 }
 
 /* A filled button only for the main action, like the play button of isometric diagrams. */
@@ -535,15 +534,15 @@ h2 {
 .header-link {
     padding: 0.35rem 0.6rem;
     border-radius: 6px;
-    color: var(--text-secondary);
+    color: var(--control-rest);
     font-size: 0.875rem;
     text-decoration: none;
     transition: color 120ms ease, background-color 120ms ease;
 }
 
-.header-link:hover { color: var(--text-primary); background: var(--hover-background); }
+.header-link:hover { color: var(--control-current); background: var(--hover-background); }
 
-.header-link[aria-current="page"] { color: var(--text-primary); font-weight: 600; }
+.header-link[aria-current="page"] { color: var(--control-current); font-weight: 600; }
 
 .header-link:focus-visible { border-radius: 6px; outline-offset: -2px; }
 
@@ -864,6 +863,10 @@ kbd {
 .asset-preview-panel { display: grid; gap: 0.5rem; }
 
 .preview-switch { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+.preview-switch button { color: var(--control-rest); }
+
+.preview-switch button:hover { color: var(--control-current); }
 
 .preview-switch [aria-pressed="true"] { border-color: var(--link); color: var(--link); }
 
@@ -1321,7 +1324,7 @@ html:has(.image-lightbox[open]) { overflow: hidden; }
 
 .tag-item .sidebar-link[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-current); font-weight: 600; }
 
-.tag-manage { flex: none; width: 1.75rem; height: 1.75rem; color: var(--text-secondary); opacity: 0; }
+.tag-manage { flex: none; width: 1.75rem; height: 1.75rem; opacity: 0; }
 
 .tag-item:hover .tag-manage,
 .tag-manage:focus-visible { opacity: 1; }
@@ -1386,7 +1389,7 @@ html:has(.image-lightbox[open]) { overflow: hidden; }
 
 .user-menu-button svg { width: 1rem; height: 1rem; fill: none; stroke: currentcolor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
 
-.user-menu-button[aria-expanded="true"] { color: var(--text-primary); background: var(--hover-background); }
+.user-menu-button[aria-expanded="true"] { color: var(--control-current); background: var(--control-current-fill); }
 
 .user-menu-list {
     position: absolute;
