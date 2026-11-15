@@ -35,7 +35,19 @@ public static class BackupCommand
         {
             from.Open();
             to.Open();
-            from.BackupDatabase(to);
+            // The running server may hold a write lock for a moment (statistics, uploads); the copy then starts again.
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    from.BackupDatabase(to);
+                    break;
+                }
+                catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6 && attempt < 50) // SQLITE_BUSY, SQLITE_LOCKED
+                {
+                    Thread.Sleep(100);
+                }
+            }
             // The copy is one self-contained file; the server switches it back to WAL when it opens it.
             using var single = to.CreateCommand();
             single.CommandText = "PRAGMA journal_mode = DELETE;";
