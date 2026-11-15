@@ -137,7 +137,9 @@ The short name of a project appears in API paths and never changes; renaming a p
 
 ## Upload from the command line
 
-Create a personal API token on the **Account** page; it can be limited to one project and to reading, and the page offers a ready ShareX configuration and this curl command for it:
+With [MDU](https://github.com/capjan/mdu) 6.10 or later, set `assets.server`, `assets.public` and `assets.project` in the site's `mdu.yml` and the token in `MDU_ASSETS_TOKEN`; then `mdu assets upload screenshot.png` prints the Markdown snippet, and `mdu lint` reports image links whose image is unknown or in the trash (`MDU032`). See [assets](https://capjan.github.io/mdu/Usage/assets.html) in the MDU documentation.
+
+Without MDU, create a personal API token on the **Account** page; it can be limited to one project and to reading, and the page offers a ready ShareX configuration and this curl command for it:
 
 ```bash
 curl -H "Authorization: Bearer mdua_…" -H "Content-Type: image/png" --data-binary @screenshot.png \

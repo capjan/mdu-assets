@@ -219,7 +219,7 @@ Diese Anforderungen betreffen das Repository `capjan/mdu`.
 | --- | --- | :-: |
 | CLI-01 | `mdu.yml` erhält einen Abschnitt `assets` mit `server` (Basis-URL der API), `public` (öffentliche Basis-URL, falls abweichend) und `project` (Standardprojekt). Das Token kommt aus der Umgebungsvariable `MDU_ASSETS_TOKEN`, nie aus `mdu.yml`. | M |
 | CLI-02 | `mdu assets upload <datei>… [--project] [--tag] [--alt] [--format markdown\|url\|html]` lädt Dateien hoch und gibt pro Datei das Snippet als Klartext aus, damit es sich pipen lässt. Bei `-` liest der Befehl von stdin. | M |
-| CLI-03 | `mdu lint` meldet Bild- und Linkziele auf dem konfigurierten Asset-Server, die unbekannt sind oder im Papierkorb liegen, als neue Regel (voraussichtlich `MDU029`). Die Prüfung nutzt den gebündelten Prüf-Endpunkt (API-06), läuft nur, wenn `assets.server` konfiguriert ist, und meldet Netzwerkfehler als Warnung, nicht als Fehler. Mit `--offline` wird sie übersprungen. | M |
+| CLI-03 | `mdu lint` meldet Bild- und Linkziele auf dem konfigurierten Asset-Server, die unbekannt sind oder im Papierkorb liegen, als neue Regel `MDU032`. Die Prüfung nutzt den gebündelten Prüf-Endpunkt (API-06), läuft nur, wenn `assets.server` konfiguriert ist, und meldet Netzwerkfehler als Warnung, nicht als Fehler. Mit `--offline` wird sie übersprungen. | M |
 | CLI-04 | Die CLI-Ausgabe bleibt Klartext und abhängigkeitsarm; der HTTP-Zugriff nutzt `HttpClient` ohne zusätzliche Pakete. | M |
 
 ### 5.11 Verwaltung, Limits und Protokoll
@@ -297,7 +297,7 @@ AuditEntry(id, at, user_id?, project_id?, action, target, details_json, ip)
 5. **Admin:** Ein Admin sieht alle Projekte, auch ohne Mitgliedschaft, und kann Benutzer anlegen und sperren; ein gesperrter Benutzer und seine Tokens werden sofort abgewiesen.
 6. **API:** `curl -H "Authorization: Bearer …" --data-binary @bild.png -H "Content-Type: image/png" "…/api/v1/projects/docs/assets?name=bild.png"` liefert `201` mit `url` und `markdown`; `GET /api/v1/assets/{id}` liefert Metadaten und Statistik.
 7. **Statistik:** Drei Abrufe aus einem normalen Browser erhöhen den Zähler um 3 (bzw. um die Zahl der nicht aus dem Cache bedienten Anfragen) und setzen den letzten Abruf; Abrufe mit Googlebot-User-Agent und Ansichten in der UI ändern den Zähler nicht.
-8. **mdu:** `mdu assets upload bild.png` gibt eine Markdown-Zeile aus; nach dem Löschen des Assets meldet `mdu lint` den Link als `MDU029`.
+8. **mdu:** `mdu assets upload bild.png` gibt eine Markdown-Zeile aus; nach dem Löschen des Assets meldet `mdu lint` den Link als `MDU032`.
 9. **Design:** Hell- und Dunkelmodus entsprechen den Tokens des Design-Systems; ein Tab-Durchlauf durch Kopfzeile, Baum, Raster und Detailansicht zeigt überall den MDU-Fokusring.
 
 ## 10. Ausbaustufen
