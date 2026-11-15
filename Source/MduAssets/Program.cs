@@ -1,6 +1,8 @@
 using MduAssets;
 using MduAssets.Api;
 using MduAssets.Delivery;
+using MduAssets.Images;
+using MduAssets.Imaging;
 using MduAssets.Security;
 using MduAssets.Storage;
 using MduAssets.Web;
@@ -50,6 +52,8 @@ catch (StartupException exception)
     return 1;
 }
 
+// libvips keeps no cache of its own; ImageJobs bounds how many images are worked on at once.
+ImageProcessor.Configure(threadsPerOperation: Math.Max(1, Environment.ProcessorCount / settings.ImageJobs));
 builder.Services.AddSingleton(settings);
 builder.Services.AddSingleton(dataDirectory);
 builder.Services.AddSingleton(database);
@@ -57,6 +61,11 @@ builder.Services.AddSingleton<BlobStore>();
 builder.Services.AddSingleton<UserStore>();
 builder.Services.AddSingleton<AssetStore>();
 builder.Services.AddSingleton<FolderStore>();
+builder.Services.AddSingleton<VariantStore>();
+builder.Services.AddSingleton<ImageJobs>();
+builder.Services.AddSingleton<AvifQueue>();
+builder.Services.AddHostedService(services => services.GetRequiredService<AvifQueue>());
+builder.Services.AddSingleton<Variants>();
 builder.Services.AddSingleton<ProjectStore>();
 builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddSingleton<ProjectAccess>();
@@ -110,6 +119,7 @@ ui.MapGet("/ui/{**path}", (string path, UiFiles files, HttpContext context) => f
 if (createdAdmin is not null)
     app.Logger.LogInformation("Created the first administrator {Admin}", createdAdmin);
 app.Logger.LogInformation("Data directory: {DataDirectory}", dataDirectory.Root);
+app.Logger.LogInformation("libvips {Version}, {Jobs} image jobs at a time, {Workers} AVIF workers", ImageProcessor.Version, settings.ImageJobs, settings.Options.AvifWorkers);
 app.Logger.LogInformation("Web interface and API: {UiBaseUrl}, public links: {PublicBaseUrl}", settings.UiBaseUrl, settings.PublicBaseUrl);
 app.Run();
 return 0;

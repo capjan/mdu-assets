@@ -23,6 +23,9 @@ public sealed class DataDirectory
     /// <summary>Uploads in progress. On the same file system as <see cref="BlobsPath"/>, so finished files can be renamed atomically.</summary>
     public string TempPath => Path.Combine(Root, "tmp");
 
+    /// <summary>Previews and converted copies; a cache that may be deleted at any time.</summary>
+    public string VariantsPath => Path.Combine(Root, "variants");
+
     /// <summary>Data protection keys of ASP.NET Core, for example for future sign-in cookies. Only the server user may read them.</summary>
     public string KeysPath => Path.Combine(Root, "keys");
 

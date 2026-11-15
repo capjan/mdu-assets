@@ -15,9 +15,9 @@ public sealed class AssetApiTest : IDisposable
 
     public void Dispose() => _server.Dispose();
 
-    private async Task<AssetResponse> Upload(string name, uint width = 4, uint height = 3)
+    private async Task<AssetResponse> Upload(string name, int width = 4, int height = 3)
     {
-        var content = new ByteArrayContent(TestImages.Png(width, height));
+        var content = new ByteArrayContent(SampleImages.Png(width, height));
         content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         var response = await _server.Ui().PostAsync($"/api/v1/projects/default/assets?name={name}", content, TestContext.Current.CancellationToken);
         return (await response.Content.ReadFromJsonAsync<AssetResponse>(Json, TestContext.Current.CancellationToken))!;
@@ -28,7 +28,8 @@ public sealed class AssetApiTest : IDisposable
     {
         var me = await _server.Ui().GetFromJsonAsync<MeResponse>("/api/v1/me", Json, TestContext.Current.CancellationToken);
 
-        Assert.Equal(new MeResponse(TestServer.AdminName, IsAdmin: true, MustChangePassword: false, CanCreateProjects: true), me);
+        Assert.Equal((TestServer.AdminName, true, false, true), (me!.Name, me.IsAdmin, me.MustChangePassword, me.CanCreateProjects));
+        Assert.Equal([320, 640, 800, 1024, 1280, 1600, 2048], me.Widths);
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public sealed class AssetApiTest : IDisposable
 
         var project = Assert.Single(projects!.Items);
         Assert.Equal(("default", "Default", 2), (project.Slug, project.Name, project.AssetCount));
-        Assert.Equal(2 * TestImages.Png(4, 3).Length, project.TotalSize);
+        Assert.Equal(2 * SampleImages.Png(4, 3).Length, project.TotalSize);
     }
 
     [Fact]
@@ -118,7 +119,7 @@ public sealed class AssetApiTest : IDisposable
     {
         var uploaded = new List<string>();
         for (var i = 0; i < 5; i++)
-            uploaded.Add((await Upload($"image-{i}.png", width: (uint)(i + 1))).Id);
+            uploaded.Add((await Upload($"image-{i}.png", width: i + 1)).Id);
         uploaded.Reverse();
 
         var seen = new List<string>();
@@ -179,7 +180,7 @@ public sealed class AssetApiTest : IDisposable
     {
         var client = _server.Ui();
         client.DefaultRequestHeaders.Add(header, value);
-        var content = new ByteArrayContent(TestImages.Png(2, 2));
+        var content = new ByteArrayContent(SampleImages.Png(2, 2));
         content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
 
         var response = await client.PostAsync("/api/v1/projects/default/assets", content, TestContext.Current.CancellationToken);

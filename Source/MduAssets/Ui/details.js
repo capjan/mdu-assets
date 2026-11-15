@@ -3,12 +3,7 @@ import {
     $, announce, clearFormError, copyText, dateFormat, element, flashCopied, folderOptions, formatSize, handleSubmit,
     readSetting, request, send, writeSetting,
 } from "./common.js";
-
-const snippets = [
-    ["Markdown", (asset) => asset.markdown],
-    ["URL", (asset) => asset.url],
-    ["HTML", (asset) => asset.html],
-];
+import { buildSnippet, formats, optionControls, readOptions, writeOptions } from "./snippets.js";
 
 const typeNames = {
     "image/png": "PNG", "image/jpeg": "JPEG", "image/gif": "GIF", "image/webp": "WebP",
@@ -18,7 +13,7 @@ const typeNames = {
 const projectLink = (project, folderId) =>
     `/?project=${encodeURIComponent(project.slug)}${folderId ? `&folder=${folderId}` : ""}`;
 
-export async function showDetails(project, id, { editable, onFolderChange }) {
+export async function showDetails(project, id, { editable, onFolderChange, me }) {
     const [asset, folders, facets] = await Promise.all([
         request(`/assets/${encodeURIComponent(id)}`),
         request(`/projects/${encodeURIComponent(project.slug)}/folders`).then((list) => list.items),
@@ -45,6 +40,95 @@ export async function showDetails(project, id, { editable, onFolderChange }) {
         button.addEventListener("click", () => setBackground(button.dataset.background));
     setBackground(readSetting("mdu-assets-preview-background", "checker"));
 
+    // Snippets with the MDU switches the user chose last and an optional caption (LNK-06, LNK-07).
+    let options = readOptions(me.name);
+    const caption = $("asset-caption");
+    const renderSnippets = () => {
+        $("asset-snippets").replaceChildren(...Object.entries(formats).map(([format, label]) => {
+            const text = () => buildSnippet(current, format, options, caption.value.trim());
+            const copy = element("button", { class: "copy-button", type: "button", "aria-label": `Copy ${label}` }, [element("span", { text: "Copy" })]);
+            copy.addEventListener("click", async () => {
+                const ok = await copyText(text());
+                flashCopied(copy, ok);
+                announce(ok ? `Copied the ${label} snippet.` : "Copying failed. Select the text and copy it.");
+            });
+            return element("div", { class: "snippet-row" }, [
+                element("span", { class: "snippet-label", text: label }),
+                element("code", { class: "snippet-code", tabindex: "0", text: text(), "aria-label": `${label} snippet` }),
+                copy,
+            ]);
+        }));
+    };
+    $("asset-snippet-options").replaceChildren(optionControls(options, me.widths, (changed) => {
+        options = changed;
+        writeOptions(me.name, options);
+        renderSnippets();
+    }));
+    caption.addEventListener("input", () => renderSnippets());
+
+    // The light and dark partner (LNK-06): shown with its preview, or a form to choose one.
+    const projectAssets = editable
+        ? request(`/projects/${encodeURIComponent(project.slug)}/assets?limit=500`).then((list) => list.items)
+        : Promise.resolve([]);
+    const renderPair = async () => {
+        const panel = $("asset-pair");
+        if (current.pair) {
+            const partner = await request(`/assets/${encodeURIComponent(current.pair.id)}`);
+            const other = current.pair.role === "light" ? "dark" : "light";
+            const unpair = element("button", { class: "secondary-button", type: "button", text: "Unpair", hidden: !editable });
+            unpair.addEventListener("click", async () => {
+                try {
+                    render(await send(`/assets/${encodeURIComponent(current.id)}/pair`, "DELETE"));
+                    announce("The pair is dissolved.");
+                    $("asset-pair").querySelector("select")?.focus();
+                } catch (error) {
+                    announce(error.message);
+                }
+            });
+            panel.replaceChildren(
+                element("div", { class: "pair-partner" }, [
+                    element("img", { src: `${location.origin}${partner.thumbnailUrl}`, alt: "" }),
+                    element("p", {}, [
+                        `This is the ${current.pair.role} variant. The ${other} variant is `,
+                        element("a", { href: `/?project=${encodeURIComponent(project.slug)}&asset=${encodeURIComponent(partner.id)}`, text: partner.fileName }),
+                        ".",
+                    ]),
+                ]),
+                unpair);
+            return;
+        }
+
+        if (!editable) {
+            panel.replaceChildren(element("p", { class: "form-hint", text: "This image has no light or dark partner." }));
+            return;
+        }
+        const role = element("select", {}, [
+            element("option", { value: "light", text: "This is the light variant" }),
+            element("option", { value: "dark", text: "This is the dark variant" }),
+        ]);
+        const partner = element("select", {}, [element("option", { value: "", text: "Choose the other variant" })]);
+        const pairButton = element("button", { class: "primary-button", type: "submit", text: "Pair" });
+        const form = element("form", { class: "form" }, [
+            element("label", { class: "field" }, [element("span", { text: "This image" }), role]),
+            element("label", { class: "field" }, [element("span", { text: "Partner" }), partner]),
+            element("div", { class: "form-actions" }, [pairButton]),
+        ]);
+        if (/[-_.]dark\.[a-z0-9]+$/i.test(current.fileName)) role.value = "dark";
+        panel.replaceChildren(form);
+        const candidates = (await projectAssets).filter((a) => a.id !== current.id);
+        partner.append(...candidates.map((a) => element("option", { value: a.id, text: a.fileName })));
+        // Suggest the image whose name differs only in -light/-dark.
+        const counterpart = current.fileName.replace(/([-_.])(light|dark)(\.[a-z0-9]+)$/i, (_, separator, which, extension) =>
+            `${separator}${which.toLowerCase() === "light" ? "dark" : "light"}${extension}`);
+        partner.value = candidates.find((a) => a.fileName.toLowerCase() === counterpart.toLowerCase())?.id ?? "";
+        handleSubmit(form, async () => {
+            if (!partner.value) throw new Error("Choose the other variant first.");
+            render(await send(`/assets/${encodeURIComponent(current.id)}/pair`, "PUT", { partnerId: partner.value, role: role.value }));
+            announce("Paired. The Markdown snippet now has both lines.");
+            $("asset-pair").querySelector("button")?.focus();
+        });
+    };
+
     const render = (asset) => {
         current = asset;
         document.title = `${asset.fileName} – ${project.name} – MDU Assets`;
@@ -52,19 +136,8 @@ export async function showDetails(project, id, { editable, onFolderChange }) {
         $("asset-summary").textContent = `${asset.width && asset.height ? `${asset.width} × ${asset.height} · ` : ""}${formatSize(asset.size)}`;
         preview.replaceChildren(element("img", { src: asset.url, alt: asset.altText }));
 
-        $("asset-snippets").replaceChildren(...snippets.map(([label, text]) => {
-            const copy = element("button", { class: "copy-button", type: "button", "aria-label": `Copy ${label}` }, [element("span", { text: "Copy" })]);
-            copy.addEventListener("click", async () => {
-                const ok = await copyText(text(current));
-                flashCopied(copy, ok);
-                announce(ok ? `Copied the ${label} snippet.` : "Copying failed. Select the text and copy it.");
-            });
-            return element("div", { class: "snippet-row" }, [
-                element("span", { class: "snippet-label", text: label }),
-                element("code", { class: "snippet-code", tabindex: "0", text: text(asset), "aria-label": `${label} snippet` }),
-                copy,
-            ]);
-        }));
+        renderSnippets();
+        renderPair();
 
         const path = folders.find((folder) => folder.id === asset.folderId);
         const meta = [

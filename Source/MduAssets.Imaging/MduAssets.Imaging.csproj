@@ -4,4 +4,10 @@
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Verified under Native AOT on every target in the NetVips spike (ADR-0006). -->
+    <PackageReference Include="NetVips" Version="3.2.0" />
+    <PackageReference Include="NetVips.Native" Version="8.18.7" />
+  </ItemGroup>
+
 </Project>

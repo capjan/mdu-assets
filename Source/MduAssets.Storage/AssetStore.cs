@@ -20,10 +20,14 @@ public sealed record AssetFile(
     int? Width,
     int? Height,
     string UploadedBy,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    bool Animated = false,
+    string? PairId = null,
+    string? PairRole = null,
+    string? PairFileName = null);
 
 /// <summary>What public delivery needs to serve an asset, read without joins on the hot path.</summary>
-public sealed record DeliveryFile(string BlobSha256, string ContentType, DateTimeOffset CreatedAt);
+public sealed record DeliveryFile(string BlobSha256, string ContentType, DateTimeOffset CreatedAt, int? Width, bool Animated, bool ConvertFormats);
 
 public sealed record NewAsset(
     long ProjectId,
@@ -35,7 +39,8 @@ public sealed record NewAsset(
     long Size,
     int? Width,
     int? Height,
-    long CreatedBy);
+    long CreatedBy,
+    bool Animated = false);
 
 /// <summary>
 /// Search and filters for the asset list (ORG-04). <c>FolderIds</c> limits to these folders; <c>Unfiled</c> to assets in no folder.
@@ -96,8 +101,8 @@ public sealed class AssetStore(Database database)
                 {
                     insertVersion.Transaction = transaction;
                     insertVersion.CommandText = """
-                        INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, created_by, created_at)
-                        VALUES ($id, 1, $blob, $type, $size, $width, $height, $user, $now);
+                        INSERT INTO asset_versions (asset_id, number, blob_sha256, content_type, size, width, height, animated, created_by, created_at)
+                        VALUES ($id, 1, $blob, $type, $size, $width, $height, $animated, $user, $now);
                         """;
                     insertVersion.Parameters.AddWithValue("$id", id);
                     insertVersion.Parameters.AddWithValue("$blob", asset.BlobSha256);
@@ -105,6 +110,7 @@ public sealed class AssetStore(Database database)
                     insertVersion.Parameters.AddWithValue("$size", asset.Size);
                     insertVersion.Parameters.AddWithValue("$width", (object?)asset.Width ?? DBNull.Value);
                     insertVersion.Parameters.AddWithValue("$height", (object?)asset.Height ?? DBNull.Value);
+                    insertVersion.Parameters.AddWithValue("$animated", asset.Animated);
                     insertVersion.Parameters.AddWithValue("$user", asset.CreatedBy);
                     insertVersion.Parameters.AddWithValue("$now", now);
                     insertVersion.ExecuteNonQuery();
@@ -242,13 +248,18 @@ public sealed class AssetStore(Database database)
         using var connection = database.Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT v.blob_sha256, v.content_type, v.created_at
-            FROM assets a JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
+            SELECT v.blob_sha256, v.content_type, v.created_at, v.width, v.animated, p.convert_formats
+            FROM assets a
+            JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
+            JOIN projects p ON p.id = a.project_id
             WHERE a.id = $id;
             """;
         command.Parameters.AddWithValue("$id", id);
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new DeliveryFile(reader.GetString(0), reader.GetString(1), Clock.Parse(reader.GetString(2))) : null;
+        return reader.Read()
+            ? new DeliveryFile(reader.GetString(0), reader.GetString(1), Clock.Parse(reader.GetString(2)),
+                reader.IsDBNull(3) ? null : reader.GetInt32(3), reader.GetBoolean(4), reader.GetBoolean(5))
+            : null;
     }
 
     /// <summary>
@@ -359,6 +370,59 @@ public sealed class AssetStore(Database database)
                 """, r => r.GetString(0)));
     }
 
+    /// <summary>The first asset of a project whose current version has this content (UP-09), or <c>null</c>.</summary>
+    public string? FindByContent(long projectId, string blobSha256)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT a.id FROM assets a JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
+            WHERE a.project_id = $project AND v.blob_sha256 = $blob ORDER BY a.created_at LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$project", projectId);
+        command.Parameters.AddWithValue("$blob", blobSha256);
+        return command.ExecuteScalar() as string;
+    }
+
+    /// <summary>
+    /// Links two assets of a project as light and dark variant (LNK-06). Earlier partners of either asset lose their pair,
+    /// so a pair is always two assets that point at each other.
+    /// </summary>
+    public void SetPair(string id, string role, string partnerId)
+    {
+        using var connection = database.Open();
+        using var transaction = connection.BeginTransaction();
+        void Execute(string sql, params (string Name, object? Value)[] parameters)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            foreach (var (name, value) in parameters)
+                command.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            command.ExecuteNonQuery();
+        }
+
+        const string clear = """
+            UPDATE assets SET pair_asset_id = NULL, pair_role = NULL
+            WHERE id IN ($a, $b) OR pair_asset_id IN ($a, $b);
+            """;
+        Execute(clear, ("$a", id), ("$b", partnerId));
+        const string set = "UPDATE assets SET pair_asset_id = $partner, pair_role = $role WHERE id = $id;";
+        Execute(set, ("$id", id), ("$partner", partnerId), ("$role", role));
+        Execute(set, ("$id", partnerId), ("$partner", id), ("$role", role == "light" ? "dark" : "light"));
+        transaction.Commit();
+    }
+
+    /// <summary>Dissolves the pair of an asset on both sides.</summary>
+    public void ClearPair(string id)
+    {
+        using var connection = database.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE assets SET pair_asset_id = NULL, pair_role = NULL WHERE id = $id OR pair_asset_id = $id;";
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
     /// <summary>Bytes on disk for all versions; versions with the same content share one blob and count once.</summary>
     public long StorageUsed()
     {
@@ -371,11 +435,13 @@ public sealed class AssetStore(Database database)
     private const string SelectCurrent = """
         SELECT a.id, a.project_id, p.slug, a.folder_id, a.file_name, a.alt_text, a.description,
                (SELECT group_concat(t.name, char(31)) FROM (SELECT name FROM tags WHERE asset_id = a.id ORDER BY key) t),
-               v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, u.name, v.created_at
+               v.number, v.blob_sha256, v.content_type, v.size, v.width, v.height, u.name, v.created_at,
+               v.animated, a.pair_asset_id, a.pair_role, pa.file_name
         FROM assets a
         JOIN asset_versions v ON v.asset_id = a.id AND v.number = a.current_version
         JOIN projects p ON p.id = a.project_id
         JOIN users u ON u.id = a.created_by
+        LEFT JOIN assets pa ON pa.id = a.pair_asset_id
         """;
 
     private static AssetFile ReadAsset(SqliteDataReader reader) =>
@@ -388,5 +454,9 @@ public sealed class AssetStore(Database database)
             reader.IsDBNull(12) ? null : reader.GetInt32(12),
             reader.IsDBNull(13) ? null : reader.GetInt32(13),
             reader.GetString(14),
-            Clock.Parse(reader.GetString(15)));
+            Clock.Parse(reader.GetString(15)),
+            reader.GetBoolean(16),
+            reader.IsDBNull(17) ? null : reader.GetString(17),
+            reader.IsDBNull(18) ? null : reader.GetString(18),
+            reader.IsDBNull(19) ? null : reader.GetString(19));
 }

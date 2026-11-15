@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using MduAssets.Images;
 using MduAssets.Security;
 using MduAssets.Storage;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -35,6 +36,9 @@ public static class AssetEndpoints
         api.MapGet("/assets/{id}", Get);
         api.MapPatch("/assets/{id}", Update);
         api.MapGet("/lookup", Lookup);
+        api.MapGet("/assets/{id}/thumbnail", Thumbnail);
+        api.MapPut("/assets/{id}/pair", SetPair);
+        api.MapDelete("/assets/{id}/pair", ClearPair);
     }
 
     /// <summary>
@@ -183,6 +187,53 @@ public static class AssetEndpoints
         if (assets.FindCurrent(id) is not { } asset || access.CheckAsset(user, asset, ProjectRole.Viewer) is not null)
             return ProjectAccess.UnknownAsset(id);
         return TypedResults.Ok(AssetResponse.From(asset, settings));
+    }
+
+    /// <summary>
+    /// The preview for the web interface (DLV-06): signed in, never counted as a request, and cached for good because the
+    /// interface links it with the content hash in <c>?v=</c>.
+    /// </summary>
+    private static async Task<Results<PhysicalFileHttpResult, ProblemHttpResult>> Thumbnail(
+        string id, HttpContext context, ProjectAccess access, AssetStore assets, Variants variants)
+    {
+        if (!AssetId.IsValid(id) || assets.FindCurrent(id) is not { } asset)
+            return ProjectAccess.UnknownAsset(id);
+        if (access.CheckAsset(context.User, asset, ProjectRole.Viewer) is { } problem)
+            return problem;
+        if (await variants.ThumbnailAsync(asset.BlobSha256, context.RequestAborted) is not { } path)
+            return TypedResults.Problem("No preview could be made for this image.", statusCode: StatusCodes.Status422UnprocessableEntity, title: "No preview");
+
+        context.Response.Headers.CacheControl = "private, max-age=31536000, immutable";
+        return TypedResults.PhysicalFile(path, "image/webp", entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{asset.BlobSha256[..32]}-thumb\""));
+    }
+
+    /// <summary>Links an asset and another one of its project as light and dark variant (LNK-06).</summary>
+    private static Results<Ok<AssetResponse>, ProblemHttpResult> SetPair(
+        string id, PairChange change, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, ServerSettings settings)
+    {
+        if (!AssetId.IsValid(id) || assets.FindCurrent(id) is not { } asset)
+            return ProjectAccess.UnknownAsset(id);
+        if (access.CheckAsset(user, asset, ProjectRole.Editor) is { } problem)
+            return problem;
+        if (change.Role is not ("light" or "dark"))
+            return Invalid("Invalid role", "The role of this image is light or dark.");
+        if (change.PartnerId is not { } partnerId || !AssetId.IsValid(partnerId) || partnerId == id ||
+            assets.FindCurrent(partnerId) is not { } partner || partner.ProjectId != asset.ProjectId)
+            return Invalid("Invalid partner", "The partner is another image of the same project.");
+
+        assets.SetPair(id, change.Role, partner.Id);
+        return TypedResults.Ok(AssetResponse.From(assets.FindCurrent(id)!, settings));
+    }
+
+    private static Results<Ok<AssetResponse>, ProblemHttpResult> ClearPair(
+        string id, ClaimsPrincipal user, ProjectAccess access, AssetStore assets, ServerSettings settings)
+    {
+        if (!AssetId.IsValid(id) || assets.FindCurrent(id) is not { } asset)
+            return ProjectAccess.UnknownAsset(id);
+        if (access.CheckAsset(user, asset, ProjectRole.Editor) is { } problem)
+            return problem;
+        assets.ClearPair(id);
+        return TypedResults.Ok(AssetResponse.From(assets.FindCurrent(id)!, settings));
     }
 
     private static ProblemHttpResult Invalid(string title, string detail) =>

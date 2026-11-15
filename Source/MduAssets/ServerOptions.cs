@@ -35,4 +35,16 @@ public sealed class ServerOptions
 
     /// <summary>How long caches may serve a stale copy while they revalidate it, in seconds.</summary>
     public int PublicStaleWhileRevalidateSeconds { get; set; } = 86_400;
+
+    /// <summary>Comma-separated widths that <c>?w=</c> may ask for (DLV-03); other values snap to the next larger one.</summary>
+    public string Widths { get; set; } = "320,640,800,1024,1280,1600,2048";
+
+    /// <summary>Longer side of the previews in the web interface, in pixels (DLV-06).</summary>
+    public int ThumbnailSize { get; set; } = 480;
+
+    /// <summary>How many image jobs (cleaning, previews, resizing, conversion) run at the same time; 0 means half the processors.</summary>
+    public int ImageJobs { get; set; }
+
+    /// <summary>How many background workers encode AVIF copies (DLV-04). AVIF takes about a second per image.</summary>
+    public int AvifWorkers { get; set; } = 1;
 }

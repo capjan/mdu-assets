@@ -69,10 +69,11 @@ public static class ProjectEndpoints
             return problem;
         var name = changes.Name ?? target.Name;
         var description = changes.Description ?? target.Description;
+        var convertFormats = changes.ConvertFormats ?? target.ConvertFormats;
         if (Validate(name, description) is { } invalid)
             return invalid;
 
-        if (projects.Update(target.Id, name.Trim(), description.Trim()) is null)
+        if (projects.Update(target.Id, name.Trim(), description.Trim(), convertFormats) is null)
             return ProjectAccess.UnknownProject(project);
         return TypedResults.Ok(Summary(user, projects, target.Id));
     }
