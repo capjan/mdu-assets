@@ -194,14 +194,19 @@ public static class AssetEndpoints
     /// interface links it with the content hash in <c>?v=</c>.
     /// </summary>
     private static async Task<Results<PhysicalFileHttpResult, ProblemHttpResult>> Thumbnail(
-        string id, HttpContext context, ProjectAccess access, AssetStore assets, Variants variants)
+        string id, HttpContext context, ProjectAccess access, AssetStore assets, BlobStore blobs, Variants variants)
     {
         if (!AssetId.IsValid(id) || assets.FindCurrent(id) is not { } asset)
             return ProjectAccess.UnknownAsset(id);
         if (access.CheckAsset(context.User, asset, ProjectRole.Viewer) is { } problem)
             return problem;
         if (await variants.ThumbnailAsync(asset.BlobSha256, context.RequestAborted) is not { } path)
+        {
+            // BMP files the reader cannot decode are shown as they are; browsers display them.
+            if (asset.ContentType == "image/bmp")
+                return TypedResults.PhysicalFile(blobs.PathOf(asset.BlobSha256), asset.ContentType);
             return TypedResults.Problem("No preview could be made for this image.", statusCode: StatusCodes.Status422UnprocessableEntity, title: "No preview");
+        }
 
         context.Response.Headers.CacheControl = "private, max-age=31536000, immutable";
         return TypedResults.PhysicalFile(path, "image/webp", entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{asset.BlobSha256[..32]}-thumb\""));

@@ -73,7 +73,9 @@ public static class ImageProcessor
     {
         try
         {
-            using var thumbnail = Image.Thumbnail(path, size, height: size, size: Enums.Size.Down);
+            using var thumbnail = IsBmp(path)
+                ? OpenBmp(path).ThumbnailImage(size, height: size, size: Enums.Size.Down)
+                : Image.Thumbnail(path, size, height: size, size: Enums.Size.Down);
             return thumbnail.WebpsaveBuffer(q: 80, keep: Enums.ForeignKeep.None);
         }
         catch (VipsException exception)
@@ -91,7 +93,9 @@ public static class ImageProcessor
         try
         {
             var animated = contentType is "image/gif" or "image/webp";
-            using var resized = Image.Thumbnail(animated ? path + "[n=-1]" : path, width, height: 10_000_000, size: Enums.Size.Down);
+            using var resized = IsBmp(path)
+                ? OpenBmp(path).ThumbnailImage(width, height: 10_000_000, size: Enums.Size.Down)
+                : Image.Thumbnail(animated ? path + "[n=-1]" : path, width, height: 10_000_000, size: Enums.Size.Down);
             return Save(resized, contentType);
         }
         catch (VipsException exception)
@@ -105,7 +109,7 @@ public static class ImageProcessor
     {
         try
         {
-            using var image = Image.NewFromFile(path, access: Enums.Access.Sequential);
+            using var image = IsBmp(path) ? OpenBmp(path) : Image.NewFromFile(path, access: Enums.Access.Sequential);
             return targetType switch
             {
                 "image/webp" => new EncodedImage(image.WebpsaveBuffer(q: 80, keep: Enums.ForeignKeep.Icc), targetType),
@@ -119,6 +123,18 @@ public static class ImageProcessor
             throw new ImageDecodeException("The image could not be converted.", exception);
         }
     }
+
+    private static bool IsBmp(string path)
+    {
+        Span<byte> signature = stackalloc byte[2];
+        using var file = File.OpenRead(path);
+        return file.Read(signature) == 2 && signature.SequenceEqual("BM"u8);
+    }
+
+    private static Image OpenBmp(string path) =>
+        BmpReader.Read(File.ReadAllBytes(path)) is { } pixels
+            ? Image.NewFromMemory(pixels.Data, pixels.Width, pixels.Height, pixels.Bands, Enums.BandFormat.Uchar).Copy(interpretation: Enums.Interpretation.Srgb)
+            : throw new ImageDecodeException("This kind of BMP file cannot be decoded.", new NotSupportedException("BMP variant"));
 
     private static EncodedImage Save(Image image, string contentType) => contentType switch
     {

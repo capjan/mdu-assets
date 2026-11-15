@@ -40,6 +40,26 @@ public static class SampleImages
         return gif;
     }
 
+    /// <summary>An uncompressed 24-bit BMP with a solid color; libvips cannot read BMP, so it is written by hand.</summary>
+    public static byte[] Bmp(int width, int height)
+    {
+        var stride = (width * 3 + 3) / 4 * 4;
+        var data = new byte[54 + stride * height];
+        "BM"u8.CopyTo(data);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(2), data.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(10), 54);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(14), 40);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(18), width);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(22), height);
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(26), 1);
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(28), 24);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(34), stride * height);
+        for (var y = 0; y < height; y++)
+            for (var x = 0; x < width; x++)
+                data[54 + y * stride + x * 3] = 200;
+        return data;
+    }
+
     /// <summary>Width and height of an encoded image and how many frames it has.</summary>
     public static (int Width, int Height, int Frames) Measure(byte[] data)
     {
