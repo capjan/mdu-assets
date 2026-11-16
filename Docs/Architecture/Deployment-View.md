@@ -5,13 +5,13 @@ description: How the MDU Asset Server runs on a VPS with Docker behind a reverse
 
 # Deployment View
 
-Step-by-step instructions for this setup are in the [deployment guide](../Deployment.md).
+Step-by-step instructions for this setup are in the [installation guide](../Installation/Docker-Compose.md).
 
 ## Reference installation: VPS with Docker
 
 The first production instance runs on a VPS with Docker Compose. A reverse proxy (Caddy in the reference setup) terminates TLS for two host names and forwards both to the same container.
 
-The production instance serves its two host names (UI and public links) behind the server's existing Traefik, which also serves other sites; the host names are set on the server only ([`Deploy/traefik`](https://github.com/capjan/mdu-assets/tree/main/Deploy/traefik)). Every successful build of `main` is deployed by the workflow `deploy.yml`: an SSH key restricted to a forced command makes the server build and start that commit from its own checkout of the public repository ([deployment guide](../Deployment.md#automatic-deployment-from-github)).
+The production instance serves its two host names (UI and public links) behind the server's existing Traefik, which also serves other sites; the host names are set on the server only ([`Deploy/traefik`](https://github.com/capjan/mdu-assets/tree/main/Deploy/traefik)). Every successful build of `main` is deployed by the workflow `deploy.yml`: an SSH key restricted to a forced command makes the server build and start that commit from its own checkout of the public repository ([installation behind Traefik](../Installation/Traefik.md#automatic-deployment-from-github)).
 
 ```mermaid
 flowchart LR
@@ -87,7 +87,7 @@ The host names are configuration; the documentation uses `assets.example.com` fo
 
 ## Backup and restore
 
-`mdu-assets backup <target>` writes a consistent copy of the database (SQLite online backup) and the blobs it refers to, also while the server runs, but not the keys `keys/`, so a copy cannot make session cookies; the [deployment guide](../Deployment.md#backup) shows it for Docker. Where the copy goes (storage box, snapshot, other host) is the operator's choice. `variants/` and `tmp/` are not needed for a restore.
+`mdu-assets backup <target>` writes a consistent copy of the database (SQLite online backup) and the blobs it refers to, also while the server runs, but not the keys `keys/`, so a copy cannot make session cookies; [Operations](../Operations.md#backup) shows it for Docker and the native program. Where the copy goes (storage box, snapshot, other host) is the operator's choice. `variants/` and `tmp/` are not needed for a restore.
 
 ## Other ways to run
 
@@ -120,7 +120,7 @@ flowchart LR
   R --> M[publish-docker<br/>tags version and latest]
 ```
 
-- git-cliff calculates the version from the Conventional Commits since the last `v*` tag (`Source/cliff.toml`; the first release is `v0.1.0`) and writes the release notes. The version goes into the program (`-p:Version`) and the image (`VERSION` build argument and OCI labels).
+- git-cliff calculates the version from the Conventional Commits since the last `v*` tag (`Source/cliff.toml`; the first release is `v1.0.0`) and writes the release notes. The version goes into the program (`-p:Version`) and the image (`VERSION` build argument and OCI labels).
 - Each archive is extracted again and smoke-tested with `Source/smoke-test.sh`, after signing and notarization on macOS; each image is smoke-tested before it is pushed.
 - Images are pushed by digest and get the tags `capjan/mdu-assets:<version>` and `latest` only after the GitHub release is published, so a failed run leaves no tag behind. "Re-run failed jobs" resumes a run with the same version.
 - Secrets and variables: the Apple signing and notarization settings and the Docker Hub token as in MDU, listed in [AGENTS.md](https://github.com/capjan/mdu-assets/blob/main/AGENTS.md). The first job checks them before anything is built.
