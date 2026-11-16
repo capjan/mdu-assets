@@ -1,3 +1,9 @@
+---
+navigation.order: 90
+navigation.title: Requirements
+description: Requirements of the MDU Asset Server from the initial interview, with their IDs and priorities.
+---
+
 # MDU Asset Server – Requirements
 
 As of: 2026-11-13 · Status: draft after the requirements interview · Working name: `mdu-assets`

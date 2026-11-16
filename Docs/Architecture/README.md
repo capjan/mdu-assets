@@ -1,5 +1,5 @@
 ---
-navigation.order: 10
+navigation.order: 80
 navigation.placement: top
 description: arc42 architecture documentation of the MDU Asset Server.
 ---
