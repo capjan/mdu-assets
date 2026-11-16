@@ -5,7 +5,7 @@ description: Spike report (German) that verifies NetVips and libvips under .NET 
 
 # NetVips AOT Spike
 
-Stand: 13.11.2026 · Zu Risiko R-01 in den [Anforderungen](../Requirements.md#11-risiken) · Code in [`Source/Spikes/NetVipsAot`](https://github.com/capjan/mdu-assets/tree/main/Source/Spikes/NetVipsAot)
+Stand: 13.11.2026 · Zu Risiko R-01 in den [Anforderungen](../Requirements.md#11-risks) · Code in [`Source/Spikes/NetVipsAot`](https://github.com/capjan/mdu-assets/tree/main/Source/Spikes/NetVipsAot)
 
 ## Frage
 

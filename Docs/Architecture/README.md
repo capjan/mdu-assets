@@ -1,5 +1,5 @@
 ---
-navigation.order: 10
+navigation.order: 80
 navigation.placement: top
 description: arc42 architecture documentation of the MDU Asset Server.
 ---
@@ -24,7 +24,7 @@ This is the architecture documentation of the MDU Asset Server, structured after
 | 12 | [Glossary](Glossary.md) | Terms used in this documentation |
 | – | [NetVips AOT Spike](NetVips-AOT-Spike.md) | Spike report on NetVips under Native AOT (German) |
 
-The detailed functional requirements with their IDs (such as `LNK-01`) are in the [requirements document](../Requirements.md), which is written in German.
+The detailed functional requirements with their IDs (such as `LNK-01`) are in the [requirements document](../Requirements.md).
 
 ## Keeping it current
 

@@ -11,6 +11,8 @@ using MduAssets.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 
+GlibcMemory.LimitArenas();
+
 // Settings files sit next to the program, wherever it is started from.
 var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
 {

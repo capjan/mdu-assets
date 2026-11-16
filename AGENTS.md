@@ -6,7 +6,7 @@ The MDU Asset Server is a self-hosted image server for MDU documentation: author
 
 ## Where things are
 
-- `Docs/Requirements.md` – requirements with IDs such as `LNK-01` (German).
+- `Docs/Requirements.md` – requirements with IDs such as `LNK-01`.
 - `Docs/Architecture` – arc42 architecture documentation (English), rendered with MDU. Section 9 holds the architecture decision records in `Architecture-Decisions/`.
 - `Docs/Architecture/NetVips-AOT-Spike.md` – report of the spike that verifies NetVips/libvips under Native AOT.
 - `Source` – everything that compiles. `Source/Spikes/NetVipsAot` holds the spike code; CI runs it on every target.
@@ -35,5 +35,8 @@ The arc42 documentation is maintained together with the code. In the same pull r
 ## Working in this repository
 
 - Changes to `main` go through pull requests with green CI; branches are deleted after merge.
-- Commit messages and pull request titles follow Conventional Commits (`<type>[optional scope][!]: <description>`).
+- Commit messages and pull request titles follow Conventional Commits (`<type>[optional scope][!]: <description>`). `Source/cliff.toml` turns them into versions: `feat` bumps minor, `fix` and `perf` bump patch, breaking changes bump major, other types do not bump.
+- Start releases manually from `main` with the `Release` workflow (`.github/workflows/release.yml`). It calculates the version and notes with git-cliff, builds and smoke-tests the native archives and the Docker images, creates the GitHub release and then tags `capjan/mdu-assets:<version>` and `latest`. Do not hard-code a version in project files.
+- The release needs these repository settings, checked in its first job: secrets `APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64` (base64-encoded Developer ID Application `.p12`), `APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD`, `APPLE_NOTARIZATION_PRIVATE_KEY` (App Store Connect API key `.p8`, Developer role or higher), `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (read and write access token); variables `APPLE_NOTARIZATION_KEY_ID` and `APPLE_NOTARIZATION_ISSUER_ID`; and the public Docker Hub repository `capjan/mdu-assets`.
+- Releases ship third-party notices and license texts: `Source/THIRD-PARTY-NOTICES.md` and `Source/Licenses`, plus the libvips notices that the release workflow and the Dockerfile copy from the NetVips.Native package. When a release starts to ship another third-party library, add it there. macOS signing in the release workflow signs every `.dylib` in the archive.
 - Docker on macOS runs through Colima; start it with `colima start`. Do not build .NET under x64 emulation: the SDK crashes; build on native runners or cross-compile.

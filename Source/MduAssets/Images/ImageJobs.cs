@@ -2,7 +2,8 @@ namespace MduAssets.Images;
 
 /// <summary>
 /// Limits how many image jobs run at once, so memory stays predictable when many uploads or new variants arrive together
-/// (NF-07). Jobs run on the thread pool because libvips blocks while it works.
+/// (NF-07). Jobs run on the thread pool because libvips blocks while it works. When the last running job ends, the
+/// native memory libvips freed goes back to the system.
 /// </summary>
 public sealed class ImageJobs(ServerSettings settings)
 {
@@ -17,7 +18,8 @@ public sealed class ImageJobs(ServerSettings settings)
         }
         finally
         {
-            _gate.Release();
+            if (_gate.Release() + 1 == settings.ImageJobs)
+                GlibcMemory.Trim();
         }
     }
 }

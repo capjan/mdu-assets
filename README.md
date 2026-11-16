@@ -2,23 +2,38 @@
 
 A self-hosted image server for [MDU](https://github.com/capjan/mdu) documentation. Drop or paste an image, get a stable link, and paste the ready-made Markdown into your docs.
 
-> **Status:** Milestone M9. A web interface in the MDU style uploads images by drag and drop, paste or file picker and hands out Markdown snippets; images are served under stable public links. Several users work together in projects as viewers, editors and owners, and admins manage users and settings. Images are organized in folders and tags, found by search, filters or their public link, and shown in a details view. Uploads lose their EXIF and GPS data; links serve smaller widths with `?w=` and WebP or AVIF where browsers accept it; light and dark variants form pairs with ready MDU snippets. Images can be replaced under the same link with a version history, and deleted images wait in a trash for 30 days. Each image shows how often it was requested and from which sites. Tools upload with personal API tokens; the API is described as OpenAPI. Operators get quotas, rate limits, an audit log, project export and import, and a backup command. See the [deployment guide](Docs/Deployment.md) to run it. Progress is tracked in the [milestones](https://github.com/capjan/mdu-assets/milestones).
+Documentation: **<https://capjan.github.io/mdu-assets/>**
+
+## Quick start
+
+```sh
+docker run --rm -p 127.0.0.1:8080:8080 \
+  -e MDU_ASSETS_UIBASEURL=http://127.0.0.1:8080 \
+  -e MDU_ASSETS_PUBLICBASEURL=http://localhost:8080 \
+  -e MDU_ASSETS_ALLOWHTTP=true \
+  -e MDU_ASSETS_ADMIN_USER=admin \
+  -e MDU_ASSETS_ADMIN_PASSWORD=change-me-please \
+  capjan/mdu-assets
+```
+
+Open `http://127.0.0.1:8080/`, sign in, and paste a screenshot. For a real installation with HTTPS, see [Installation](Docs/Installation/README.md).
 
 ## Why
 
 MDU sites are plain Markdown. Local images work well, but screenshots that change often, images shared by several documentation projects, or images added from tools outside the repository are easier to manage in one place. The asset server keeps those images, hands out links that never change, and shows how often each image is used, while the Markdown stays portable: an asset link is an ordinary HTTPS URL.
 
-## Planned features
+## Features
 
 - **Upload by drag and drop or paste.** Paste a screenshot with <kbd>Cmd</kbd>+<kbd>V</kbd> and copy the Markdown snippet right away.
-- **Stable links.** `https://assets.example.com/i/k3F9xQ/architecture.png` keeps working when the image moves to another folder, is renamed, or is replaced by a new version.
-- **MDU-ready snippets.** Markdown with alt text, light and dark pairs (`#only-light` / `#only-dark`), and MDU attributes such as `{.image-frame}`.
-- **Projects and folders.** Group images in nested folders and tags; several users work together with Owner, Editor, and Viewer roles. Admins see all projects and manage users.
+- **Stable links.** `https://img.example.com/i/k3F9xQa2Bc/architecture.webp` keeps working when the image is renamed, tagged, or replaced by a new version.
+- **The right format on upload.** Screenshots become lossless WebP, photos high-quality WebP, and EXIF and GPS data are removed; `?w=800` serves smaller widths.
+- **MDU-ready snippets.** Markdown with alt text, light and dark pairs (`#only-light` / `#only-dark`), captions, and MDU attributes such as `{.image-frame}`.
+- **Projects and tags.** Find images by tags, search and filters; several users work together as viewers, editors and owners.
 - **Versions and trash.** Replace an image under the same link, restore earlier versions, and recover deleted images for 30 days.
-- **Image processing.** Metadata stripping, thumbnails, resized variants (`?w=800`), and WebP/AVIF delivery.
-- **Usage statistics.** Number of requests, last request, and referring sites for each image, without bots and without storing personal data.
-- **API.** Upload and query images with personal API tokens, for example from ShareX or `curl`. The API is described as OpenAPI.
+- **Usage statistics.** Number of requests, last request, and referring pages for each image, without bots and without storing personal data.
+- **API.** Upload and query images with personal API tokens, for example from ShareX or `curl`; described as OpenAPI.
 - **MDU integration.** `mdu assets upload` prints the snippet, and `mdu lint` reports links to deleted images.
+- **Operations.** Quotas, rate limits, an audit log, project export and import, and a backup command.
 - **MDU look.** The web interface uses the design tokens and components of MDU, including light and dark mode and keyboard focus styles.
 
 ## Technology
@@ -32,7 +47,7 @@ MDU sites are plain Markdown. Local images work well, but screenshots that chang
 
 | Path | Contents |
 | --- | --- |
-| [`Docs`](Docs) | All documentation, rendered with MDU: [requirements](Docs/Requirements.md) (German), [arc42 architecture](Docs/Architecture/README.md) with decisions, and the [NetVips AOT spike report](Docs/Architecture/NetVips-AOT-Spike.md) (German) |
+| [`Docs`](Docs) | All documentation, rendered with MDU and published on GitHub Pages: [user guide](Docs/README.md), [requirements](Docs/Requirements.md), [arc42 architecture](Docs/Architecture/README.md) with decisions, and the [NetVips AOT spike report](Docs/Architecture/NetVips-AOT-Spike.md) (German) |
 | [`Source`](Source) | Everything that compiles: the server, its tests, the token sync tool and the [NetVips AOT spike](Source/Spikes/NetVipsAot) |
 
 The build workflow runs only when something under `Source/` changes.
@@ -61,7 +76,7 @@ The [NetVips AOT spike](Docs/Architecture/NetVips-AOT-Spike.md) is published and
 
 ## Contributing
 
-Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/) (`<type>[optional scope][!]: <description>`). Changes to `main` go through pull requests; CI lints the documentation and runs the spike on every supported platform.
+Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/) (`<type>[optional scope][!]: <description>`). Changes to `main` go through pull requests; CI lints the documentation and runs the spike on every supported platform. Releases are started manually from `main` with the Release workflow: git-cliff derives the version and notes, and the workflow publishes native archives on GitHub Releases and the multi-architecture image `capjan/mdu-assets` on Docker Hub.
 
 ## License
 
